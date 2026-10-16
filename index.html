@@ -118,11 +118,12 @@ tailwind.config = {
    0. CONFIG & GOOGLE APPS SCRIPT BACKEND
 ============================================================ */
 // ผู้ใช้สามารถตั้งค่า Web App URL ผ่านหน้า "ตั้งค่า" ในระบบ หรือกำหนดค่าเริ่มต้นตรงนี้
+const DEFAULT_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzNRMu5S5A2Hs15p3zUAy6lB-Bw4FH3qqduWOPabXbn6SxapktbeWNlZqjj60lXtpII/exec';
 const DEFAULT_DRIVE_FOLDER_ID = '1ehgB_CLugTr96TwYLTbSISYyO4K5rGob';
 
 const CONFIG = {
   getScriptUrl() {
-    return localStorage.getItem('snk_gas_url') || '';
+    return localStorage.getItem('snk_gas_url') || DEFAULT_SCRIPT_URL;
   },
   setScriptUrl(url) {
     localStorage.setItem('snk_gas_url', (url || '').trim());
@@ -326,38 +327,8 @@ function seed(){
     }
   }
   if (!DB.get('evaluations')) DB.set('evaluations', []);
-function seed(){
-  if (!DB.get('settings')) {
-    DB.set('settings', {
-      logo:'', school:'โรงเรียนเสาไห้ "วิมลวิทยานุกูล"',
-      primary:'#16a34a', primaryDark:'#15803d', accent:'#facc15', bg:'#f0fdf4'
-    });
-  }
-  // ... (users/terms/subjectGroups/subjects/classes/students เหมือนเดิม)
 
-  // ============================================================
-  // ✅ เพิ่มตรงนี้: ตรวจว่า topics เก่าใช้ ID แบบสุ่มหรือไม่
-  // ถ้าใช่ → ลบทิ้ง เพื่อให้สร้างใหม่ด้วย ID ที่ถูกต้อง
-  // ============================================================
-  const oldTopics = DB.get('topics', null);
-  if (oldTopics) {
-    const firstId = (oldTopics.lower?.[0]?.id) || '';
-    // ID ที่ถูกต้องต้องขึ้นต้นด้วย 'tp_'
-    // ถ้าไม่ใช่ = ID เก่าแบบสุ่ม → ลบทิ้ง เพื่อ reseed
-    if (!firstId.startsWith('tp_')) {
-      console.warn('[seed] พบ topics ที่ใช้ ID แบบสุ่มเก่า กำลังสร้างใหม่...');
-      DB.del('topics');
-      // ⚠️ ไม่ลบ evaluations อัตโนมัติ เพราะอาจมีข้อมูลครูที่ยังไม่อยากเสีย
-      //    ถ้าต้องการล้างทั้งหมด ให้เปิด comment บรรทัดล่าง
-      // DB.del('evaluations');
-    }
-  }
-
-  // ... (โค้ด if (!DB.get('topics')) { ... } ที่แก้แล้วในขั้น A)
-}
   if (!DB.get('topics')) {
-    // ✅ mk รับ id เป็นพารามิเตอร์ตัวแรก และสร้าง id ของ children อัตโนมัติ
-    //    ในรูปแบบ `${parentId}_${ลำดับ}` เช่น 'tp_l_1_1', 'tp_l_1_2'
     const mk = (id, name, subs) => ({
       id,
       name,
@@ -425,7 +396,7 @@ function seed(){
     ];
 
     DB.set('topics', { lower, upper });
-}
+  }
 }
 
 /* ---------- Data Accessors ---------- */
@@ -2277,8 +2248,26 @@ if (evS) {
   // ==== Topic Admin Handlers (5 Levels: หัวข้อใหญ่ > หัวข้อย่อย > หัวข้อย่อยย่อย > หัวข้อย่อยย่อยย่อย > หัวข้อย่อยย่อยย่อยย่อย) ====
   const _saveTopics = async () => {
     if (API.isConnected()) {
-      const r = await API.request('saveTopics', { data: getTopics() });
-      return r && r.status === 'success';
+      loading('กำลังบันทึกหัวข้อไปยัง Google Sheets...');
+      try {
+        const r = await API.request('saveTopics', { data: getTopics() });
+        closeLoading();
+        if (r && r.status === 'success') {
+          if (r.data && (r.data.lower || r.data.upper)) {
+            DB.set('topics', r.data);
+          }
+          return true;
+        } else {
+          console.error('saveTopics error:', r);
+          toast('error', 'บันทึกลง Google Sheets ไม่สำเร็จ: ' + (r?.message || 'โปรดตรวจการเชื่อมต่อ'));
+          return false;
+        }
+      } catch (err) {
+        closeLoading();
+        console.error('saveTopics network error:', err);
+        toast('error', 'เกิดข้อผิดพลาดในการเชื่อมต่อ Google Sheets');
+        return false;
+      }
     }
     return true;
   };
