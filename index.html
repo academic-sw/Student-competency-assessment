@@ -211,7 +211,23 @@ const API = {
       if (res.data.classes) DB.set('classes', res.data.classes);
       if (res.data.students) DB.set('students', res.data.students);
       if (res.data.topics) DB.set('topics', res.data.topics);
-      if (res.data.evaluations) DB.set('evaluations', res.data.evaluations);
+      if (res.data.evaluations && Array.isArray(res.data.evaluations)) {
+        const localEvals = DB.get('evaluations', []);
+        const cloudEvals = res.data.evaluations;
+        const map = new Map();
+        cloudEvals.forEach(e => map.set(e.id, e));
+        localEvals.forEach(e => {
+          if (!map.has(e.id)) {
+            map.set(e.id, e);
+          } else {
+            const cloudItem = map.get(e.id);
+            const lt = new Date(e.updatedAt || 0).getTime();
+            const ct = new Date(cloudItem.updatedAt || 0).getTime();
+            if (lt > ct) map.set(e.id, e);
+          }
+        });
+        DB.set('evaluations', Array.from(map.values()));
+      }
       return true;
     }
     return false;
@@ -675,6 +691,7 @@ function navItems(){
   if (u.role === 'admin') return [
     { id:'home', label:'หน้าแรก', icon:'fa-house' },
     { id:'a-dashboard', label:'แดชบอร์ด', icon:'fa-chart-pie' },
+    { id:'t-evaluate', label:'ประเมินสมรรถนะ', icon:'fa-clipboard-check' },
     { id:'a-users', label:'ผู้ใช้งาน', icon:'fa-users' },
     { id:'a-terms', label:'ภาคเรียน', icon:'fa-calendar-days' },
     { id:'a-subjects', label:'รายวิชา', icon:'fa-book' },
@@ -813,10 +830,16 @@ function viewHome(){
             ประเมินสมรรถนะสำคัญ 5 ด้าน · ซิงค์ข้อมูลลง Google Sheets อัตโนมัติ · เก็บรูปภาพใน Google Drive
           </p>
           <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
-            <button data-nav="dashboard" class="btn btn-primary px-6 py-3 text-sm">
+            <button data-nav="dashboard" class="btn btn-ghost px-6 py-3 text-sm">
               <i class="fa-solid fa-chart-simple"></i> ดูผลการประเมินภาพรวม
             </button>
-            ${state.user ? '' : `<button id="btnLogin2" class="btn btn-ghost px-6 py-3 text-sm">
+            ${state.user ? `
+            <button data-nav="t-evaluate" class="btn btn-primary px-6 py-3 text-sm">
+              <i class="fa-solid fa-clipboard-check"></i> ทำแบบประเมินสมรรถนะ
+            </button>
+            <button data-nav="${state.user.role==='admin'?'a-dashboard':'t-dashboard'}" class="btn btn-ghost px-6 py-3 text-sm">
+              <i class="fa-solid fa-chart-pie"></i> ไปที่แดชบอร์ด
+            </button>` : `<button id="btnLogin2" class="btn btn-primary px-6 py-3 text-sm">
               <i class="fa-solid fa-right-to-bracket"></i> เข้าสู่ระบบครู / ผู้ดูแล
             </button>`}
           </div>
@@ -1516,10 +1539,17 @@ function viewEvaluate(){
     classId: ''
   };
 
-  const classOptions = classes.filter(c => (f.type==='lower'?LOWER:UPPER).includes(c.level));
-  if (!classOptions.find(c => c.id === f.classId)) {
-    f.classId = classOptions[0]?.id || '';
+  if (!classes.find(c => c.id === f.classId)) {
+    f.classId = classes[0]?.id || '';
   }
+
+  // ซิงค์ f.type ตามห้องเรียนที่เลือกเสมอ
+  const curCls = classes.find(c => c.id === f.classId);
+  if (curCls && curCls.level) {
+    f.type = LOWER.includes(curCls.level) ? 'lower' : 'upper';
+  }
+
+  const classOptions = classes.filter(c => (f.type==='lower'?LOWER:UPPER).includes(c.level));
 
   return `
   <div class="fade-in space-y-4">
@@ -1529,7 +1559,7 @@ function viewEvaluate(){
       <div class="grid gap-3 lg:grid-cols-4">
         <div>
           <label class="label"><i class="fa-solid fa-calendar-days mr-1"></i>ภาคเรียน/ปีการศึกษา</label>
-          <input class="input bg-slate-50 text-slate-500" value="${termLabel(cur)}" readonly>
+          <input class="input bg-slate-50 text-slate-500 font-semibold" value="${termLabel(cur)}" readonly>
         </div>
         <div>
           <label class="label"><i class="fa-solid fa-book mr-1"></i>รายวิชา</label>
@@ -1573,14 +1603,14 @@ function renderEvalList(){
     return;
   }
   const students = getStudents().filter(s => s.classId === f.classId).sort((a,b) => num(a.number)-num(b.number));
-  const evs = getEvals().filter(e => e.termId === cur.id && e.subjectId === f.subjectId && e.classId === f.classId);
+  const evs = getEvals().filter(e => String(e.termId) === String(cur.id) && String(e.subjectId) === String(f.subjectId));
 
   const results = students.map(s => {
-    const ev = evs.find(e => e.studentId === s.id);
+    const ev = evs.find(e => String(e.studentId) === String(s.id));
     return { s, ev, r: ev ? evalResult(ev) : null };
   });
 
-  const doneList = results.filter(x => x.r);
+  const doneList = results.filter(x => x.r && x.r.evaluatedLeaves > 0);
   const classAvg = doneList.length ? doneList.reduce((a,b)=>a+b.r.avg,0)/doneList.length : 0;
 
   box.innerHTML = `
@@ -1589,7 +1619,7 @@ function renderEvalList(){
       <div class="flex items-center gap-2">
         <span class="badge" style="background:var(--c-primary-soft);color:var(--c-primary-dark)">${esc(classById(f.classId)?.name||'')}</span>
         <span class="badge bg-slate-100 text-slate-600">นักเรียน ${students.length} คน</span>
-        <span class="badge ${doneList.length===students.length?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}">
+        <span class="badge ${doneList.length===students.length && students.length>0?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}">
           ประเมินแล้ว ${doneList.length}/${students.length}
         </span>
       </div>
@@ -1602,20 +1632,23 @@ function renderEvalList(){
       <table class="tbl">
         <thead><tr><th>เลขที่</th><th>ชื่อ - นามสกุล</th><th>สถานะ</th><th>ค่าเฉลี่ย</th><th>ระดับคุณภาพ</th><th class="text-right">จัดการ</th></tr></thead>
         <tbody>
-          ${results.map(x => `
+          ${results.length === 0 ? `<tr><td colspan="6" class="p-8 text-center text-slate-400">ยังไม่มีรายชื่อนักเรียนในห้องนี้ (ไปที่เมนู <b>ชั้น/นักเรียน</b> เพื่อเพิ่มรายชื่อหรือนำเข้าจาก Excel)</td></tr>` : results.map(x => {
+            const isDone = x.r && x.r.evaluatedLeaves > 0;
+            return `
             <tr>
               <td class="font-semibold text-slate-600">${esc(x.s.number)}</td>
               <td class="font-medium text-slate-700">${esc(x.s.name)}</td>
-              <td>${x.r ? '<span class="badge bg-green-100 text-green-700"><i class="fa-solid fa-check"></i>ประเมินแล้ว</span>'
-                        : '<span class="badge bg-slate-100 text-slate-500"><i class="fa-solid fa-clock"></i>รอประเมิน</span>'}</td>
-              <td class="font-semibold" style="color:${x.r?LEVEL_INFO[x.r.level].hex:'#cbd5e1'}">${x.r?fmt(x.r.avg):'-'}</td>
-              <td>${x.r?levelBadge(x.r.level):'<span class="text-xs text-slate-300">—</span>'}</td>
+              <td>${isDone ? '<span class="badge bg-green-100 text-green-700"><i class="fa-solid fa-check"></i>ประเมินแล้ว</span>'
+                           : '<span class="badge bg-slate-100 text-slate-500"><i class="fa-solid fa-clock"></i>รอประเมิน</span>'}</td>
+              <td class="font-semibold" style="color:${isDone?LEVEL_INFO[x.r.level].hex:'#cbd5e1'}">${isDone?fmt(x.r.avg):'-'}</td>
+              <td>${isDone?levelBadge(x.r.level):'<span class="text-xs text-slate-300">—</span>'}</td>
               <td class="text-right">
-                <button data-eval="${x.s.id}" class="btn ${x.r?'btn-ghost':'btn-primary'} h-8 px-3 text-xs">
-                  <i class="fa-solid ${x.r?'fa-pen':'fa-clipboard-check'}"></i> ${x.r?'แก้ไข':'ประเมิน'}
+                <button type="button" data-eval="${x.s.id}" class="btn ${isDone?'btn-ghost':'btn-primary'} h-8 px-3 text-xs">
+                  <i class="fa-solid ${isDone?'fa-pen':'fa-clipboard-check'}"></i> ${isDone?'แก้ไข':'ประเมิน'}
                 </button>
               </td>
-            </tr>`).join('')}
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>
@@ -1831,41 +1864,69 @@ function openEvalModal(studentId){
   // บันทึกผลการประเมิน
   $('#btnSaveEval', root).addEventListener('click', async () => {
     const saveBtn = $('#btnSaveEval', root);
+    const origHTML = saveBtn.innerHTML;
     saveBtn.innerHTML = '<i class="fa-solid fa-spinner spin"></i> กำลังบันทึก...';
     saveBtn.disabled = true;
 
-    const res = computeFromTopics(currentScores, topics);
-    const evs = getEvals();
-    const idx = evs.findIndex(e =>
-      e.termId === cur.id && e.subjectId === f.subjectId &&
-      e.studentId === studentId && e.type === f.type);
+    try {
+      const res = computeFromTopics(currentScores, topics);
+      const evs = getEvals();
+      const idx = evs.findIndex(e =>
+        String(e.termId) === String(cur.id) &&
+        String(e.subjectId) === String(f.subjectId) &&
+        String(e.studentId) === String(studentId)
+      );
 
-    const payload = {
-      id: idx >= 0 ? evs[idx].id : uid(),
-      termId: cur.id,
-      subjectId: f.subjectId,
-      classId: f.classId,
-      studentId,
-      teacherId: state.user.id,
-      type: f.type,
-      scores: currentScores,
-      avg: Number(fmt(res.avg)),
-      level: res.level,
-      updatedAt: new Date().toISOString()
-    };
+      // ครูผู้ประเมิน: ป้องกัน state.user เป็น null
+      const curTeacher = state.user || getUsers().find(u => u.role === 'teacher') || getUsers()[0] || { id: 'u_admin' };
 
-    if (idx >= 0) evs[idx] = payload;
-    else evs.push(payload);
+      const payload = {
+        id: idx >= 0 ? evs[idx].id : uid(),
+        termId: cur.id,
+        subjectId: f.subjectId,
+        classId: f.classId,
+        studentId,
+        teacherId: curTeacher.id,
+        type: f.type,
+        scores: currentScores,
+        avg: Number(fmt(res.avg)),
+        level: res.level,
+        updatedAt: new Date().toISOString()
+      };
 
-    DB.set('evaluations', evs);
+      if (idx >= 0) evs[idx] = payload;
+      else evs.push(payload);
 
-    if (API.isConnected()) {
-      API.request('saveEvaluation', { data: payload });
+      // บันทึกข้อมูลลงฐานข้อมูลเครื่องทันทีก่อน
+      DB.set('evaluations', evs);
+
+      // ส่งบันทึกขึ้น Google Sheets (ถ้าเชื่อมต่อไว้)
+      if (API.isConnected()) {
+        try {
+          const cloudRes = await API.request('saveEvaluation', { data: payload });
+          if (cloudRes && cloudRes.status === 'success' && Array.isArray(cloudRes.data)) {
+            DB.set('evaluations', cloudRes.data);
+          }
+        } catch (apiErr) {
+          console.warn('บันทึกขึ้น Google Sheets ไม่สำเร็จในขณะนี้:', apiErr);
+          toast('warning', 'บันทึกลงระบบในเครื่องแล้ว (รอส่งขึ้น Google Sheets)');
+        }
+      }
+
+      close();
+      toast('success', 'บันทึกผลการประเมินเรียบร้อยแล้ว');
+      render();
+    } catch (err) {
+      console.error('Error saving eval:', err);
+      saveBtn.disabled = false;
+      saveBtn.innerHTML = origHTML;
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาดในการบันทึก',
+        text: err.message || String(err),
+        confirmButtonColor: '#ef4444'
+      });
     }
-
-    close();
-    toast('success', 'บันทึกผลการประเมินเรียบร้อยแล้ว');
-    render();
   });
 }
 
@@ -2490,11 +2551,33 @@ function mountView(){
   const evS = $('#evSubject');
   if (evS) {
     evS.addEventListener('change', e => { state._evalForm.subjectId = e.target.value; renderEvalList(); });
-    $('#evType').addEventListener('change', e => { state._evalForm.type = e.target.value; render(); });
-    $('#evClass').addEventListener('change', e => { state._evalForm.classId = e.target.value; renderEvalList(); });
+    $('#evType').addEventListener('change', e => {
+      state._evalForm.type = e.target.value;
+      const classes = getClasses().filter(c => (e.target.value==='lower'?LOWER:UPPER).includes(c.level));
+      state._evalForm.classId = classes[0]?.id || '';
+      render();
+    });
+    $('#evClass').addEventListener('change', e => {
+      state._evalForm.classId = e.target.value;
+      const curCls = classById(e.target.value);
+      if (curCls && curCls.level) {
+        state._evalForm.type = LOWER.includes(curCls.level) ? 'lower' : 'upper';
+      }
+      renderEvalList();
+    });
     renderEvalList();
   }
-  $$('[data-eval]').forEach(b => b.addEventListener('click', () => openEvalModal(b.dataset.eval)));
+
+  // Event Delegation สำหรับ #evList: กดปุ่มประเมิน/แก้ไขได้ตลอดเวลา แม้จะเปลี่ยนห้องหรือวิชา
+  const evListBox = $('#evList');
+  if (evListBox) {
+    evListBox.addEventListener('click', e => {
+      const btn = e.target.closest('[data-eval]');
+      if (btn) {
+        openEvalModal(btn.dataset.eval);
+      }
+    });
+  }
 
   // 8. Settings & Cloud Sync Handlers
   const btnSaveGas = $('#btnSaveGasUrl');
