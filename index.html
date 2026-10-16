@@ -208,8 +208,26 @@ const API = {
       if (res.data.subjects) DB.set('subjects', res.data.subjects);
       if (res.data.classes) DB.set('classes', res.data.classes);
       if (res.data.students) DB.set('students', res.data.students);
-      if (res.data.topics) DB.set('topics', res.data.topics);
-      if (res.data.evaluations) DB.set('evaluations', res.data.evaluations);
+      if (res.data.topics && (res.data.topics.lower?.length || res.data.topics.upper?.length)) {
+        DB.set('topics', res.data.topics);
+      }
+      if (res.data.evaluations && Array.isArray(res.data.evaluations)) {
+        const localEvals = DB.get('evaluations', []);
+        const cloudEvals = res.data.evaluations;
+        const map = new Map();
+        cloudEvals.forEach(e => map.set(e.id, e));
+        localEvals.forEach(e => {
+          if (!map.has(e.id)) {
+            map.set(e.id, e);
+          } else {
+            const cloudItem = map.get(e.id);
+            const lt = new Date(e.updatedAt || 0).getTime();
+            const ct = new Date(cloudItem.updatedAt || 0).getTime();
+            if (lt > ct) map.set(e.id, e);
+          }
+        });
+        DB.set('evaluations', Array.from(map.values()));
+      }
       return true;
     }
     return false;
@@ -434,17 +452,110 @@ function leavesOf(node){
   return node.children.flatMap(leavesOf);
 }
 
+/**
+ * คำนวณคะแนนแบบลำดับชั้นจากล่างขึ้นบน (Bottom-Up Hierarchical Average)
+ * - โหนดปลายทาง (Leaf): ดึงคะแนนดิบที่ประเมิน (0-3)
+ * - โหนดแม่ (Parent): คิดค่าเฉลี่ยจากคะแนนของโหนดย่อย (Children) ของตนเอง
+ *   (ระดับ 5 -> ระดับ 4 -> ระดับ 3 -> ระดับ 2 -> ระดับ 1)
+ */
+function computeNodeScore(node, scores){
+  const kids = node.children || [];
+  if (!kids.length) {
+    const raw = (scores && scores[node.id] !== undefined && scores[node.id] !== null && scores[node.id] !== '')
+      ? Number(scores[node.id])
+      : null;
+    const isEval = (raw !== null && !isNaN(raw));
+    return {
+      id: node.id,
+      name: node.name,
+      isLeaf: true,
+      avg: isEval ? raw : null,
+      evaluated: isEval,
+      totalLeaves: 1,
+      evaluatedLeaves: isEval ? 1 : 0
+    };
+  }
+
+  let sumAvg = 0;
+  let evalKids = 0;
+  let totalLeaves = 0;
+  let evaluatedLeaves = 0;
+  const childResults = [];
+
+  for (const child of kids) {
+    const res = computeNodeScore(child, scores);
+    childResults.push(res);
+    totalLeaves += res.totalLeaves;
+    evaluatedLeaves += res.evaluatedLeaves;
+    if (res.avg !== null && !isNaN(res.avg)) {
+      sumAvg += res.avg;
+      evalKids++;
+    }
+  }
+
+  const avg = evalKids > 0 ? (sumAvg / evalKids) : null;
+  return {
+    id: node.id,
+    name: node.name,
+    isLeaf: false,
+    avg: avg,
+    evaluated: evalKids > 0,
+    totalLeaves,
+    evaluatedLeaves,
+    childResults
+  };
+}
+
 function computeFromTopics(scores, topicList){
-  if (!topicList || !topicList.length) return { avg:0, level:0, topics:[] };
+  if (!topicList || !topicList.length) {
+    return { avg: 0, level: 0, topics: [], totalLeaves: 0, evaluatedLeaves: 0, nodeMap: {} };
+  }
+
+  let sumMainAvg = 0;
+  let evalMainCount = 0;
+  let totalLeaves = 0;
+  let evaluatedLeaves = 0;
+  const nodeMap = {};
+
+  function traverseMap(res){
+    if (!res) return;
+    nodeMap[res.id] = res;
+    if (res.childResults) {
+      res.childResults.forEach(traverseMap);
+    }
+  }
+
   const topicStats = topicList.map(t => {
-    const lv = leavesOf(t);
-    const vals = lv.map(l => (scores[l.id] !== undefined ? num(scores[l.id]) : null)).filter(v => v !== null);
-    const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
-    return { id:t.id, name:t.name, avg, level:levelFromAvg(avg), count: vals.length, total: lv.length };
+    const res = computeNodeScore(t, scores);
+    traverseMap(res);
+    totalLeaves += res.totalLeaves;
+    evaluatedLeaves += res.evaluatedLeaves;
+    const avg = (res.avg !== null && !isNaN(res.avg)) ? res.avg : 0;
+    if (res.avg !== null && !isNaN(res.avg)) {
+      sumMainAvg += res.avg;
+      evalMainCount++;
+    }
+    return {
+      id: t.id,
+      name: t.name,
+      avg: avg,
+      level: levelFromAvg(avg),
+      count: res.evaluatedLeaves,
+      total: res.totalLeaves,
+      hasScore: (res.avg !== null && !isNaN(res.avg)),
+      nodeRes: res
+    };
   });
-  const validAvgs = topicStats.filter(t => t.count > 0).map(t => t.avg);
-  const avg = validAvgs.length ? validAvgs.reduce((a,b)=>a+b,0) / validAvgs.length : 0;
-  return { avg, level:levelFromAvg(avg), topics: topicStats };
+
+  const overallAvg = evalMainCount > 0 ? (sumMainAvg / evalMainCount) : 0;
+  return {
+    avg: overallAvg,
+    level: levelFromAvg(overallAvg),
+    topics: topicStats,
+    totalLeaves,
+    evaluatedLeaves,
+    nodeMap
+  };
 }
 
 function evalResult(ev){
@@ -621,6 +732,7 @@ function navItems(){
   if (u.role === 'admin') return [
     { id:'home', label:'หน้าแรก', icon:'fa-house' },
     { id:'a-dashboard', label:'แดชบอร์ด', icon:'fa-chart-pie' },
+    { id:'t-evaluate', label:'ประเมินสมรรถนะ', icon:'fa-clipboard-check' },
     { id:'a-users', label:'ผู้ใช้งาน', icon:'fa-users' },
     { id:'a-terms', label:'ภาคเรียน', icon:'fa-calendar-days' },
     { id:'a-subjects', label:'รายวิชา', icon:'fa-book' },
@@ -1167,41 +1279,143 @@ function tabStudents(){
   </div>`;
 }
 
-/* ---------- 8.7 ADMIN : TOPICS ---------- */
+/* ---------- 8.7 ADMIN : TOPICS (5-Level Management) ---------- */
+const TOPIC_LEVEL_LABELS = [
+  'หัวข้อใหญ่',
+  'หัวข้อย่อย',
+  'หัวข้อย่อยย่อย',
+  'หัวข้อย่อยย่อยย่อย',
+  'หัวข้อย่อยย่อยย่อยย่อย'
+];
+
+const TOPIC_LEVEL_STYLES = [
+  { border: 'border-emerald-500', bg: 'bg-emerald-50/50', badge: 'bg-emerald-100 text-emerald-800' },
+  { border: 'border-sky-400', bg: 'bg-sky-50/40', badge: 'bg-sky-100 text-sky-800' },
+  { border: 'border-amber-400', bg: 'bg-amber-50/40', badge: 'bg-amber-100 text-amber-800' },
+  { border: 'border-purple-400', bg: 'bg-purple-50/40', badge: 'bg-purple-100 text-purple-800' },
+  { border: 'border-rose-400', bg: 'bg-rose-50/40', badge: 'bg-rose-100 text-rose-800' }
+];
+
+function findTopicNode(list, id) {
+  if (!list || !Array.isArray(list)) return null;
+  for (const item of list) {
+    if (item.id === id) return item;
+    if (item.children && item.children.length) {
+      const found = findTopicNode(item.children, id);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function deleteTopicNode(list, id) {
+  if (!list || !Array.isArray(list)) return false;
+  const idx = list.findIndex(item => item.id === id);
+  if (idx !== -1) {
+    list.splice(idx, 1);
+    return true;
+  }
+  for (const item of list) {
+    if (item.children && item.children.length) {
+      if (deleteTopicNode(item.children, id)) return true;
+    }
+  }
+  return false;
+}
+
+function renderAdminTopicNode(node, depth, pathStr) {
+  const kids = node.children || [];
+  const lvl = Math.min(depth, 4);
+  const style = TOPIC_LEVEL_STYLES[lvl];
+  const label = TOPIC_LEVEL_LABELS[lvl];
+  const canAddChild = depth < 4;
+  const nextLabel = canAddChild ? TOPIC_LEVEL_LABELS[depth + 1] : '';
+
+  return `
+  <div class="rounded-xl border border-slate-200/90 ${style.bg} p-3 transition hover:border-slate-300">
+    <div class="flex flex-wrap items-start justify-between gap-2">
+      <div class="flex-1 min-w-[200px]">
+        <div class="flex items-center gap-2 mb-1">
+          <span class="badge ${style.badge} font-bold text-[10px]">
+            <i class="fa-solid fa-layer-group text-[9px]"></i> ระดับ ${depth + 1}: ${label}
+          </span>
+          ${!kids.length ? `<span class="badge bg-slate-100 text-slate-500 text-[10px]"><i class="fa-solid fa-circle-dot text-[8px] text-emerald-500"></i> ข้อประเมิน (ให้คะแนน)</span>` : ''}
+          ${kids.length ? `<span class="badge bg-slate-200/70 text-slate-600 text-[10px]">${kids.length} ข้อย่อย</span>` : ''}
+        </div>
+        <p class="text-sm font-semibold text-slate-800 leading-snug">${esc(node.name)}</p>
+      </div>
+
+      <div class="flex shrink-0 items-center gap-1">
+        ${canAddChild ? `
+          <button data-add-node="${node.id}" data-depth="${depth}" class="btn btn-ghost h-7 px-2.5 text-xs text-emerald-700 bg-white hover:bg-emerald-50 border border-emerald-300 shadow-2xs font-medium" title="เพิ่ม${nextLabel}">
+            <i class="fa-solid fa-plus text-[10px]"></i> ${nextLabel}
+          </button>` : ''}
+        <button data-edit-node="${node.id}" class="btn btn-ghost h-7 w-7 !p-0 text-sky-600 hover:bg-sky-50" title="แก้ไข">
+          <i class="fa-solid fa-pen text-xs"></i>
+        </button>
+        <button data-del-node="${node.id}" class="btn btn-ghost h-7 w-7 !p-0 text-rose-500 hover:bg-rose-50" title="ลบ">
+          <i class="fa-solid fa-trash text-xs"></i>
+        </button>
+      </div>
+    </div>
+
+    ${kids.length ? `
+      <div class="mt-2.5 space-y-2.5 border-l-2 pl-3 sm:pl-4 border-slate-300">
+        ${kids.map((k, ki) => renderAdminTopicNode(k, depth + 1, `${pathStr}.${ki + 1}`)).join('')}
+      </div>` : ''}
+  </div>`;
+}
+
 function viewTopics(){
   const type = state._topicType || 'lower';
   const topics = getTopics()[type] || [];
   return `
   <div class="fade-in space-y-4">
-    ${pageHeader('หัวข้อประเมินสมรรถนะสำคัญ','จัดการหัวข้อ 5 ด้านตามหลักสูตรแกนกลาง','fa-list-check',
-      `<button id="addTopic" class="btn btn-primary px-4 py-2 text-sm"><i class="fa-solid fa-plus"></i> เพิ่มหัวข้อใหญ่</button>`)}
+    ${pageHeader('หัวข้อประเมินสมรรถนะสำคัญ','จัดการหัวข้อใหญ่ > หัวข้อย่อย > หัวข้อย่อยย่อย > หัวข้อย่อยย่อยย่อย > หัวข้อย่อยย่อยย่อยย่อย (5 ระดับ)','fa-list-check',
+      `<button id="addTopic" class="btn btn-primary px-4 py-2 text-sm"><i class="fa-solid fa-plus"></i> เพิ่มหัวข้อใหญ่ (ระดับ 1)</button>`)}
     <div class="flex flex-wrap gap-1.5">
       <button data-topictype="lower" class="nav-btn ${type==='lower'?'active':''}">
         <i class="fa-solid fa-book-open"></i> สมรรถนะสำคัญ ม.ต้น (ม.1-3)</button>
       <button data-topictype="upper" class="nav-btn ${type==='upper'?'active':''}">
         <i class="fa-solid fa-book"></i> สมรรถนะสำคัญ ม.ปลาย (ม.4-6)</button>
     </div>
-    <div class="space-y-3">
-      ${topics.map((t,i) => `
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <h4 class="font-bold text-slate-800">${esc(t.name)}</h4>
-            <div class="flex gap-1">
-              <button data-add-sub="${t.id}" class="btn btn-ghost h-8 px-2.5 text-xs text-emerald-600"><i class="fa-solid fa-plus"></i> ข้อย่อย</button>
-              <button data-edit-topic="${t.id}" class="btn btn-ghost h-8 w-8 !p-0 text-sky-600"><i class="fa-solid fa-pen text-xs"></i></button>
+    <div class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-900 leading-relaxed">
+      <p class="font-bold mb-1"><i class="fa-solid fa-circle-info mr-1"></i> โครงสร้างการประเมิน 5 ระดับ และการคิดคะแนนเฉลี่ย:</p>
+      <div class="flex flex-wrap gap-x-3 gap-y-1 text-slate-700">
+        <span><b>ระดับ 1:</b> หัวข้อใหญ่</span> &rarr;
+        <span><b>ระดับ 2:</b> หัวข้อย่อย</span> &rarr;
+        <span><b>ระดับ 3:</b> หัวข้อย่อยย่อย</span> &rarr;
+        <span><b>ระดับ 4:</b> หัวข้อย่อยย่อยย่อย</span> &rarr;
+        <span><b>ระดับ 5:</b> หัวข้อย่อยย่อยย่อยย่อย</span>
+      </div>
+      <p class="mt-1 text-slate-500">การคิดคะแนนจะเฉลี่ยจากล่างขึ้นบน: ระดับ 5 คิดรวมในระดับ 4 ของตนเอง &rarr; ระดับ 4 คิดรวมในระดับ 3 &rarr; ระดับ 3 คิดในระดับ 2 &rarr; ระดับ 2 คิดในระดับ 1 &rarr; และระดับ 1 แต่ละข้อเฉลี่ยรวมเป็นคะแนนรวมทั้งหมด</p>
+    </div>
+    <div class="space-y-4">
+      ${topics.length ? topics.map((t, i) => `
+        <div class="card overflow-hidden">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
+            <div class="flex items-center gap-2">
+              <span class="grid h-7 w-7 place-items-center rounded-lg text-xs font-bold text-white shadow-xs" style="background:var(--c-primary)">${i+1}</span>
+              <div>
+                <span class="badge bg-emerald-100 text-emerald-800 font-bold text-[10px]">ระดับ 1: หัวข้อใหญ่</span>
+                <p class="text-sm font-bold text-slate-800 leading-tight mt-0.5">${esc(t.name)}</p>
+              </div>
+              <span class="badge bg-slate-200 text-slate-600 text-xs ml-2">${leavesOf(t).length} ข้อประเมิน</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button data-add-node="${t.id}" data-depth="0" class="btn btn-ghost h-8 px-2.5 text-xs text-emerald-700 hover:bg-emerald-50 border border-emerald-200 font-medium">
+                <i class="fa-solid fa-plus"></i> หัวข้อย่อย
+              </button>
+              <button data-edit-node="${t.id}" class="btn btn-ghost h-8 w-8 !p-0 text-sky-600" title="แก้ไขหัวข้อใหญ่"><i class="fa-solid fa-pen text-xs"></i></button>
+              <button data-del-node="${t.id}" class="btn btn-ghost h-8 w-8 !p-0 text-rose-500" title="ลบหัวข้อใหญ่"><i class="fa-solid fa-trash text-xs"></i></button>
             </div>
           </div>
-          <div class="mt-3 space-y-1.5 pl-3 border-l-2 border-slate-100">
-            ${(t.children||[]).map(c => `
-              <div class="flex items-center justify-between py-1 text-xs text-slate-600">
-                <span>${esc(c.name)}</span>
-                <div class="flex gap-1">
-                  <button data-edit-sub="${c.id}" data-parent="${t.id}" class="text-sky-500 hover:text-sky-700 px-1"><i class="fa-solid fa-pen text-[10px]"></i></button>
-                  <button data-del-sub="${c.id}" data-parent="${t.id}" class="text-rose-500 hover:text-rose-700 px-1"><i class="fa-solid fa-trash text-[10px]"></i></button>
-                </div>
-              </div>`).join('')}
+          <div class="space-y-3 p-4">
+            ${(t.children||[]).length ? t.children.map((c, ci) => renderAdminTopicNode(c, 1, `${i+1}.${ci+1}`)).join('')
+            : '<p class="py-4 text-center text-xs text-slate-400">ยังไม่มีหัวข้อย่อย — กด "+ หัวข้อย่อย" เพื่อเพิ่ม</p>'}
           </div>
-        </div>`).join('')}
+        </div>`).join('')
+      : `<div class="card grid place-items-center p-12 text-center text-slate-400">ยังไม่มีหัวข้อประเมิน</div>`}
     </div>
   </div>`;
 }
@@ -1683,27 +1897,26 @@ function openEvalModal(studentId){
   updateSummary();
 
   // บันทึกผลการประเมิน
-  // บันทึกผลการประเมิน
-$('#btnSaveEval', root).addEventListener('click', async () => {
-  const saveBtn = $('#btnSaveEval', root);
-  const old = saveBtn.innerHTML;
-  saveBtn.innerHTML = '<i class="fa-solid fa-spinner spin"></i> กำลังบันทึก...';
-  saveBtn.disabled = true;
+  $('#btnSaveEval', root).addEventListener('click', async () => {
+    const saveBtn = $('#btnSaveEval', root);
+    const old = saveBtn.innerHTML;
+    saveBtn.innerHTML = '<i class="fa-solid fa-spinner spin"></i> กำลังบันทึก...';
+    saveBtn.disabled = true;
 
-  try {
-    const res = computeFromTopics(currentScores, topics);
-    const evs = getEvals();
-    const idx = evs.findIndex(e =>
-      e.termId === cur.id && e.subjectId === f.subjectId &&
-      e.studentId === studentId && e.type === f.type);
+    try {
+      const res = computeFromTopics(currentScores, topics);
+      const evs = getEvals();
+      const idx = evs.findIndex(e =>
+        e.termId === cur.id && e.subjectId === f.subjectId &&
+        e.studentId === studentId && e.type === f.type);
 
-    const payload = {
-      id: idx >= 0 ? evs[idx].id : uid(),
-      termId: cur.id,
-      subjectId: f.subjectId,
-      classId: f.classId,
-      studentId,
-      teacherId: state.user.id,
+      const payload = {
+        id: idx >= 0 ? evs[idx].id : uid(),
+        termId: cur.id,
+        subjectId: f.subjectId,
+        classId: f.classId,
+        studentId,
+        teacherId: (state.user && state.user.id) || 'admin',
       type: f.type,
       scores: currentScores,
       avg: Number(fmt(res.avg)),
@@ -2059,115 +2272,116 @@ if (evS) {
       toast('success', 'บันทึกชื่อสถานศึกษาเรียบร้อย');
       render();
     });
-    // ==== Topic Admin Handlers ====
-const _saveTopics = async () => {
-  if (API.isConnected()) {
-    const r = await API.request('saveTopics', { data: getTopics() });
-    return r && r.status === 'success';
   }
-  return true;
-};
 
-const at = $('#addTopic');
-if (at) at.addEventListener('click', () => {
-  openModal({
-    title:'เพิ่มหัวข้อหลัก', icon:'fa-plus',
-    body:`<div><label class="label">ชื่อหัวข้อหลัก *</label>
-          <input name="name" class="input" required placeholder="เช่น 6. ความสามารถด้าน..."></div>`,
-    submitText:'เพิ่มหัวข้อ',
-    onSubmit: async fd => {
-      const topics = getTopics();
-      const type = state._topicType || 'lower';
-      topics[type] = topics[type] || [];
-      topics[type].push({ id: uid(), name: fd.get('name').trim(), children: [] });
-      DB.set('topics', topics);
-      await _saveTopics();
-      toast('success', 'เพิ่มหัวข้อสำเร็จ');
-      render();
+  // ==== Topic Admin Handlers (5 Levels: หัวข้อใหญ่ > หัวข้อย่อย > หัวข้อย่อยย่อย > หัวข้อย่อยย่อยย่อย > หัวข้อย่อยย่อยย่อยย่อย) ====
+  const _saveTopics = async () => {
+    if (API.isConnected()) {
+      const r = await API.request('saveTopics', { data: getTopics() });
+      return r && r.status === 'success';
     }
-  });
-});
+    return true;
+  };
 
-$$('[data-add-sub]').forEach(b => b.addEventListener('click', () => {
-  const topicId = b.dataset.addSub;
-  openModal({
-    title:'เพิ่มข้อย่อย', icon:'fa-plus',
-    body:`<div><label class="label">ชื่อข้อย่อย *</label>
-          <input name="name" class="input" required placeholder="เช่น 6.1 ..."></div>`,
-    submitText:'เพิ่มข้อย่อย',
-    onSubmit: async fd => {
-      const topics = getTopics();
-      const type = state._topicType || 'lower';
-      const t = (topics[type]||[]).find(x => x.id === topicId);
-      if (!t) { toast('error','ไม่พบหัวข้อหลัก'); return false; }
-      t.children = t.children || [];
-      t.children.push({ id: uid(), name: fd.get('name').trim(), children: [] });
-      DB.set('topics', topics);
-      await _saveTopics();
-      toast('success', 'เพิ่มข้อย่อยสำเร็จ');
-      render();
-    }
-  });
-}));
-
-$$('[data-edit-topic]').forEach(b => b.addEventListener('click', () => {
-  const topics = getTopics();
-  const type = state._topicType || 'lower';
-  const t = (topics[type]||[]).find(x => x.id === b.dataset.editTopic);
-  if (!t) return;
-  openModal({
-    title:'แก้ไขหัวข้อหลัก', icon:'fa-pen-to-square',
-    body:`<div><label class="label">ชื่อหัวข้อหลัก *</label>
-          <input name="name" class="input" required value="${esc(t.name)}"></div>`,
-    submitText:'บันทึก',
-    onSubmit: async fd => {
-      t.name = fd.get('name').trim();
-      DB.set('topics', topics);
-      await _saveTopics();
-      toast('success', 'แก้ไขหัวข้อสำเร็จ');
-      render();
-    }
-  });
-}));
-
-$$('[data-edit-sub]').forEach(b => b.addEventListener('click', () => {
-  const parentId = b.dataset.parent;
-  const subId = b.dataset.editSub;
-  const topics = getTopics();
-  const type = state._topicType || 'lower';
-  const t = (topics[type]||[]).find(x => x.id === parentId);
-  const sub = t?.children?.find(c => c.id === subId);
-  if (!sub) return;
-  openModal({
-    title:'แก้ไขข้อย่อย', icon:'fa-pen-to-square',
-    body:`<div><label class="label">ชื่อข้อย่อย *</label>
-          <input name="name" class="input" required value="${esc(sub.name)}"></div>`,
-    submitText:'บันทึก',
-    onSubmit: async fd => {
-      sub.name = fd.get('name').trim();
-      DB.set('topics', topics);
-      await _saveTopics();
-      toast('success', 'แก้ไขข้อย่อยสำเร็จ');
-      render();
-    }
-  });
-}));
-
-$$('[data-del-sub]').forEach(b => b.addEventListener('click', async () => {
-  if (!await confirmDelete('ลบข้อย่อยนี้?')) return;
-  const parentId = b.dataset.parent;
-  const subId = b.dataset.delSub;
-  const topics = getTopics();
-  const type = state._topicType || 'lower';
-  const t = (topics[type]||[]).find(x => x.id === parentId);
-  if (!t) return;
-  t.children = (t.children||[]).filter(c => c.id !== subId);
-  DB.set('topics', topics);
-  await _saveTopics();
-  toast('success', 'ลบข้อย่อยแล้ว');
-  render();
-}));
+  const btnAddTopic = $('#addTopic');
+  if (btnAddTopic) {
+    btnAddTopic.addEventListener('click', () => {
+      openModal({
+        title: 'เพิ่มหัวข้อใหญ่ (ระดับ 1)',
+        icon: 'fa-plus',
+        body: `<div><label class="label">ชื่อหัวข้อใหญ่ (ระดับ 1) *</label>
+               <input name="name" class="input" required placeholder="เช่น 6. ความสามารถด้าน..."></div>`,
+        submitText: 'เพิ่มหัวข้อใหญ่',
+        onSubmit: async fd => {
+          const name = fd.get('name').trim();
+          if (!name) return false;
+          const topics = getTopics();
+          const type = state._topicType || 'lower';
+          topics[type] = topics[type] || [];
+          topics[type].push({ id: uid(), name, children: [] });
+          DB.set('topics', topics);
+          await _saveTopics();
+          toast('success', 'เพิ่มหัวข้อใหญ่สำเร็จ');
+          render();
+        }
+      });
+    });
   }
+
+  $$('[data-add-node]').forEach(b => b.addEventListener('click', () => {
+    const parentId = b.dataset.addNode;
+    const parentDepth = parseInt(b.dataset.depth || '0', 10);
+    const childDepth = parentDepth + 1;
+    const childLabel = TOPIC_LEVEL_LABELS[childDepth] || 'ข้อย่อย';
+
+    openModal({
+      title: `เพิ่ม${childLabel} (ระดับ ${childDepth + 1})`,
+      icon: 'fa-plus',
+      body: `<div><label class="label">ชื่อ${childLabel} *</label>
+             <input name="name" class="input" required placeholder="กรอกชื่อ${childLabel}"></div>`,
+      submitText: `เพิ่ม${childLabel}`,
+      onSubmit: async fd => {
+        const name = fd.get('name').trim();
+        if (!name) return false;
+        const topics = getTopics();
+        const type = state._topicType || 'lower';
+        const parentNode = findTopicNode(topics[type] || [], parentId);
+        if (!parentNode) {
+          toast('error', 'ไม่พบหัวข้อหลัก');
+          return false;
+        }
+        parentNode.children = parentNode.children || [];
+        parentNode.children.push({ id: uid(), name, children: [] });
+        DB.set('topics', topics);
+        await _saveTopics();
+        toast('success', `เพิ่ม${childLabel}สำเร็จ`);
+        render();
+      }
+    });
+  }));
+
+  $$('[data-edit-node]').forEach(b => b.addEventListener('click', () => {
+    const nodeId = b.dataset.editNode;
+    const topics = getTopics();
+    const type = state._topicType || 'lower';
+    const node = findTopicNode(topics[type] || [], nodeId);
+    if (!node) return;
+
+    openModal({
+      title: 'แก้ไขหัวข้อประเมิน',
+      icon: 'fa-pen-to-square',
+      body: `<div><label class="label">ชื่อหัวข้อประเมิน *</label>
+             <input name="name" class="input" required value="${esc(node.name)}"></div>`,
+      submitText: 'บันทึก',
+      onSubmit: async fd => {
+        const name = fd.get('name').trim();
+        if (!name) return false;
+        node.name = name;
+        DB.set('topics', topics);
+        await _saveTopics();
+        toast('success', 'แก้ไขข้อมูลสำเร็จ');
+        render();
+      }
+    });
+  }));
+
+  $$('[data-del-node]').forEach(b => b.addEventListener('click', async () => {
+    const nodeId = b.dataset.delNode;
+    const topics = getTopics();
+    const type = state._topicType || 'lower';
+    const node = findTopicNode(topics[type] || [], nodeId);
+    if (!node) return;
+
+    if (!await confirmDelete(`ต้องการลบ "${node.name}" และข้อย่อยทั้งหมดที่อยู่ภายในหรือไม่?`)) return;
+
+    const ok = deleteTopicNode(topics[type] || [], nodeId);
+    if (ok) {
+      DB.set('topics', topics);
+      await _saveTopics();
+      toast('success', 'ลบหัวข้อเรียบร้อยแล้ว');
+      render();
+    }
+  }));
 
   // Profile password
   const pw = $('#pwForm');
@@ -2265,13 +2479,8 @@ async function doLogout(){
     }
   });
 
-  // ✅ ถ้าเชื่อมต่อ cloud → ล้าง topics ที่ seed แบบ uid เก่า แล้ว sync ใหม่
+  // ✅ ซิงก์ข้อมูลล่าสุดจาก Google Sheets
   if (API.isConnected()) {
-    const firstId = DB.get('topics', {lower:[]})?.lower?.[0]?.id || '';
-    if (firstId && !firstId.startsWith('tp_')) {
-      DB.del('topics');
-      DB.del('evaluations'); // ล้าง eval เก่าที่ใช้ ID ผิด (ถ้าไม่ต้องการให้ comment บรรทัดนี้)
-    }
     API.syncAllFromCloud().then(ok => {
       if (ok) render();
     });
