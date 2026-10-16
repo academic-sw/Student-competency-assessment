@@ -1134,7 +1134,7 @@ function viewTopics(){
   const topics = getTopics()[type] || [];
   return `
   <div class="fade-in space-y-4">
-    ${pageHeader('หัวข้อประเมินสมรรถนะสำคัญ','จัดการหัวข้อ 5 ด้านตามหลักสูตรแกนกลาง','fa-list-check',
+    ${pageHeader('หัวข้อประเมินสมรรถนะสำคัญ','จัดการหัวข้อใหญ่ หัวข้อย่อย และหัวข้อย่อยย่อย','fa-list-check',
       `<button id="addTopic" class="btn btn-primary px-4 py-2 text-sm"><i class="fa-solid fa-plus"></i> เพิ่มหัวข้อใหญ่</button>`)}
     <div class="flex flex-wrap gap-1.5">
       <button data-topictype="lower" class="nav-btn ${type==='lower'?'active':''}">
@@ -1142,27 +1142,64 @@ function viewTopics(){
       <button data-topictype="upper" class="nav-btn ${type==='upper'?'active':''}">
         <i class="fa-solid fa-book"></i> สมรรถนะสำคัญ ม.ปลาย (ม.4-6)</button>
     </div>
-    <div class="space-y-3">
-      ${topics.map((t,i) => `
-        <div class="card p-4">
-          <div class="flex items-center justify-between">
-            <h4 class="font-bold text-slate-800">${esc(t.name)}</h4>
-            <div class="flex gap-1">
-              <button data-add-sub="${t.id}" class="btn btn-ghost h-8 px-2.5 text-xs text-emerald-600"><i class="fa-solid fa-plus"></i> ข้อย่อย</button>
-              <button data-edit-topic="${t.id}" class="btn btn-ghost h-8 w-8 !p-0 text-sky-600"><i class="fa-solid fa-pen text-xs"></i></button>
+    <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-800">
+      <i class="fa-solid fa-circle-info mr-1"></i>
+      ระบบรองรับหัวข้อใหญ่ > หัวข้อย่อย > หัวข้อย่อยย่อย โดยเกณฑ์คุณภาพ 3=ดีเยี่ยม, 2=ดี, 1=พอใช้/ผ่าน, 0=ปรับปรุง
+    </div>
+    <div class="space-y-4">
+      ${topics.length ? topics.map((t, i) => `
+        <div class="card overflow-hidden">
+          <div class="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50/70 px-4 py-3">
+            <div class="flex items-center gap-2">
+              <span class="grid h-7 w-7 place-items-center rounded-lg text-xs font-bold text-white shadow-xs" style="background:var(--c-primary)">${i+1}</span>
+              <p class="text-sm font-bold text-slate-800">${esc(t.name)}</p>
+              <span class="badge bg-slate-200 text-slate-600">${leavesOf(t).length} ข้อประเมิน</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <button data-add-sub="${t.id}" class="btn btn-ghost h-8 px-2.5 text-xs text-emerald-600 hover:bg-emerald-50"><i class="fa-solid fa-plus"></i> หัวข้อย่อย</button>
+              <button data-edit-topic="${t.id}" class="btn btn-ghost h-8 w-8 !p-0 text-sky-600" title="แก้ไขหัวข้อใหญ่"><i class="fa-solid fa-pen text-xs"></i></button>
+              <button data-del-topic="${t.id}" class="btn btn-ghost h-8 w-8 !p-0 text-rose-500" title="ลบหัวข้อใหญ่"><i class="fa-solid fa-trash text-xs"></i></button>
             </div>
           </div>
-          <div class="mt-3 space-y-1.5 pl-3 border-l-2 border-slate-100">
-            ${(t.children||[]).map(c => `
-              <div class="flex items-center justify-between py-1 text-xs text-slate-600">
-                <span>${esc(c.name)}</span>
-                <div class="flex gap-1">
-                  <button data-edit-sub="${c.id}" data-parent="${t.id}" class="text-sky-500 hover:text-sky-700 px-1"><i class="fa-solid fa-pen text-[10px]"></i></button>
-                  <button data-del-sub="${c.id}" data-parent="${t.id}" class="text-rose-500 hover:text-rose-700 px-1"><i class="fa-solid fa-trash text-[10px]"></i></button>
+          <div class="space-y-3 p-4">
+            ${(t.children||[]).length ? t.children.map((c, ci) => `
+              <div class="rounded-xl border border-slate-100 bg-white p-3 shadow-xs">
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <p class="text-sm font-semibold text-slate-700 leading-snug">${esc(c.name)}</p>
+                  <div class="flex shrink-0 items-center gap-1">
+                    <button data-add-subsub="${c.id}" data-parent="${t.id}" class="btn btn-ghost h-7 px-2 text-[11px] text-emerald-600 hover:bg-emerald-50" title="เพิ่มหัวข้อย่อยย่อย">
+                      <i class="fa-solid fa-plus"></i> หัวข้อย่อยย่อย
+                    </button>
+                    <button data-edit-sub="${c.id}" data-parent="${t.id}" class="btn btn-ghost h-7 w-7 !p-0 text-sky-600" title="แก้ไขหัวข้อย่อย">
+                      <i class="fa-solid fa-pen text-[10px]"></i>
+                    </button>
+                    <button data-del-sub="${c.id}" data-parent="${t.id}" class="btn btn-ghost h-7 w-7 !p-0 text-rose-500" title="ลบหัวข้อย่อย">
+                      <i class="fa-solid fa-trash text-[10px]"></i>
+                    </button>
+                  </div>
                 </div>
-              </div>`).join('')}
+
+                <!-- รายการหัวข้อย่อยย่อย (Level 3) -->
+                ${(c.children||[]).length ? `
+                  <div class="mt-2.5 space-y-1.5 border-l-2 pl-3 border-emerald-200">
+                    ${c.children.map(ss => `
+                      <div class="flex items-start justify-between gap-2 rounded-lg bg-slate-50 px-2.5 py-1.5">
+                        <p class="text-xs text-slate-600 leading-relaxed">${esc(ss.name)}</p>
+                        <div class="flex shrink-0 gap-1 pt-0.5">
+                          <button data-edit-subsub="${ss.id}" data-parent="${c.id}" data-grand="${t.id}" class="text-sky-500 hover:text-sky-700 px-1" title="แก้ไข">
+                            <i class="fa-solid fa-pen text-[10px]"></i>
+                          </button>
+                          <button data-del-subsub="${ss.id}" data-parent="${c.id}" data-grand="${t.id}" class="text-rose-500 hover:text-rose-700 px-1" title="ลบ">
+                            <i class="fa-solid fa-trash text-[10px]"></i>
+                          </button>
+                        </div>
+                      </div>`).join('')}
+                  </div>` : ''}
+              </div>`).join('')
+            : '<p class="py-4 text-center text-xs text-slate-400">ยังไม่มีหัวข้อย่อย — กด "+ หัวข้อย่อย" เพื่อเพิ่ม</p>'}
           </div>
-        </div>`).join('')}
+        </div>`).join('')
+      : `<div class="card grid place-items-center p-12 text-center text-slate-400">ยังไม่มีหัวข้อประเมิน</div>`}
     </div>
   </div>`;
 }
@@ -1754,6 +1791,17 @@ function mountView(){
   }
 
   // Users Management
+  // Helper to find a topic node by ID in hierarchy
+  const findNode = (list, id) => {
+    for (const n of list) {
+      if (n.id === id) return n;
+      const f = n.children ? findNode(n.children, id) : null;
+      if (f) return f;
+    }
+    return null;
+  };
+
+  // 1. Users Management
   const au = $('#addUser');
   if (au) au.addEventListener('click', () => {
     openModal({
@@ -1775,6 +1823,27 @@ function mountView(){
     });
   });
 
+  $$('[data-edit-user]').forEach(b => b.addEventListener('click', () => {
+    const u = getUsers().find(x => x.id === b.dataset.editUser); if (!u) return;
+    openModal({
+      title:'แก้ไขผู้ใช้งาน', icon:'fa-user-pen',
+      body: userFormHTML(u), submitText:'บันทึกการแก้ไข',
+      onSubmit: async fd => {
+        const users = getUsers();
+        const uname = fd.get('username').trim();
+        if (users.some(x => x.username === uname && x.id !== u.id)) { toast('error','ชื่อผู้ใช้นี้ถูกใช้แล้ว'); return false; }
+        const idx = users.findIndex(x => x.id === u.id);
+        users[idx] = { ...users[idx], username:uname, password:fd.get('password'),
+          fullname:fd.get('fullname').trim(), role:fd.get('role'),
+          position: (fd.get('position')||'').trim() };
+        DB.set('users', users);
+        if (state.user && state.user.id === u.id) { state.user = users[idx]; DB.set('session', users[idx].id); }
+        if (API.isConnected()) API.request('saveUser', { data: users[idx] });
+        toast('success','บันทึกการแก้ไขสำเร็จ'); render();
+      }
+    });
+  }));
+
   $$('[data-del-user]').forEach(b => b.addEventListener('click', async () => {
     const u = getUsers().find(x => x.id === b.dataset.delUser); if (!u) return;
     if (u.username === 'admin') { toast('error','ไม่สามารถลบผู้ดูแลระบบหลักได้'); return; }
@@ -1784,7 +1853,7 @@ function mountView(){
     toast('success','ลบผู้ใช้งานสำเร็จ'); render();
   }));
 
-  // Terms Management
+  // 2. Terms Management
   const at = $('#addTerm');
   if (at) at.addEventListener('click', () => {
     const y = new Date().getFullYear() + 543;
@@ -1798,7 +1867,7 @@ function mountView(){
       <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-600">
         <input type="checkbox" name="cur" class="h-4 w-4 rounded accent-green-600"> ตั้งเป็นภาคเรียนปัจจุบัน</label>`,
       submitText:'เพิ่มภาคเรียน',
-      onSubmit: fd => {
+      onSubmit: async fd => {
         const terms = getTerms();
         const year = num(fd.get('year')), term = num(fd.get('term'));
         const isCur = !!fd.get('cur');
@@ -1812,17 +1881,108 @@ function mountView(){
     });
   });
 
-  // Subjects Management
+  $$('[data-edit-term]').forEach(b => b.addEventListener('click', () => {
+    const t = getTerms().find(x => x.id === b.dataset.editTerm); if (!t) return;
+    openModal({
+      title:'แก้ไขภาคเรียน', icon:'fa-calendar-days',
+      body:`<div class="grid gap-4 sm:grid-cols-2">
+        <div><label class="label">ปีการศึกษา (พ.ศ.) *</label><input type="number" name="year" class="input" required value="${t.year}"></div>
+        <div><label class="label">ภาคเรียนที่ *</label>
+          <select name="term" class="select" required>
+            <option value="1" ${t.term===1?'selected':''}>1</option>
+            <option value="2" ${t.term===2?'selected':''}>2</option>
+          </select></div>
+      </div>
+      <label class="mt-2 inline-flex items-center gap-2 text-sm text-slate-600">
+        <input type="checkbox" name="cur" ${t.isCurrent?'checked':''} class="h-4 w-4 rounded accent-green-600"> ตั้งเป็นภาคเรียนปัจจุบัน</label>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        const terms = getTerms();
+        const year = num(fd.get('year')), term = num(fd.get('term'));
+        const isCur = !!fd.get('cur');
+        if (isCur) terms.forEach(x => x.isCurrent = false);
+        const i = terms.findIndex(x => x.id === t.id);
+        terms[i] = { ...terms[i], year, term, isCurrent: isCur };
+        DB.set('terms', terms);
+        if (API.isConnected()) API.request('saveTerm', { data: terms[i] });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-term]').forEach(b => b.addEventListener('click', async () => {
+    const t = getTerms().find(x => x.id === b.dataset.delTerm); if (!t) return;
+    if (getTerms().length <= 1) { toast('error','ต้องมีภาคเรียนอย่างน้อย 1 ภาคเรียน'); return; }
+    if (!await confirmDelete(`ลบ ${termLabel(t)} ?`)) return;
+    DB.set('terms', getTerms().filter(x => x.id !== t.id));
+    if (API.isConnected()) API.request('deleteTerm', { id: t.id });
+    toast('success','ลบภาคเรียนสำเร็จ'); render();
+  }));
+
+  $$('[data-set-current]').forEach(b => b.addEventListener('click', () => {
+    const terms = getTerms();
+    terms.forEach(t => t.isCurrent = (t.id === b.dataset.setCurrent));
+    DB.set('terms', terms);
+    const cur = terms.find(t => t.isCurrent);
+    if (API.isConnected() && cur) API.request('saveTerm', { data: cur });
+    toast('success','ตั้งเป็นภาคเรียนปัจจุบันแล้ว'); render();
+  }));
+
+  // 3. Subjects & Groups Management
+  const ag = $('#addGroup');
+  if (ag) ag.addEventListener('click', () => openModal({
+    title:'เพิ่มหมวด/กลุ่มสาระ', icon:'fa-folder-plus',
+    body:`<div><label class="label">ชื่อหมวด/กลุ่มสาระ *</label><input name="name" class="input" required placeholder="เช่น วิทยาศาสตร์และเทคโนโลยี"></div>`,
+    submitText:'เพิ่มหมวด',
+    onSubmit: async fd => {
+      const groups = getGroups();
+      const name = fd.get('name').trim();
+      if (groups.some(g => g.name === name)) { toast('error','มีหมวดนี้อยู่แล้ว'); return false; }
+      const newG = { id:uid(), name };
+      groups.push(newG);
+      DB.set('subjectGroups', groups);
+      if (API.isConnected()) API.request('saveSubjectGroup', { data: newG });
+      toast('success','เพิ่มหมวดสำเร็จ'); render();
+    }
+  }));
+
+  $$('[data-edit-group]').forEach(b => b.addEventListener('click', () => {
+    const g = getGroups().find(x => x.id === b.dataset.editGroup); if (!g) return;
+    openModal({
+      title:'แก้ไขหมวด', icon:'fa-folder-open',
+      body:`<div><label class="label">ชื่อหมวด/กลุ่มสาระ *</label><input name="name" class="input" required value="${esc(g.name)}"></div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        const groups = getGroups();
+        const i = groups.findIndex(x => x.id === g.id);
+        groups[i].name = fd.get('name').trim();
+        DB.set('subjectGroups', groups);
+        if (API.isConnected()) API.request('saveSubjectGroup', { data: groups[i] });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-group]').forEach(b => b.addEventListener('click', async () => {
+    const g = getGroups().find(x => x.id === b.dataset.delGroup); if (!g) return;
+    if (!await confirmDelete(`ลบหมวด "${g.name}" และรายวิชาที่เกี่ยวข้อง?`)) return;
+    DB.set('subjectGroups', getGroups().filter(x => x.id !== g.id));
+    DB.set('subjects', getSubjects().filter(s => s.groupId !== g.id));
+    if (API.isConnected()) API.request('deleteSubjectGroup', { id: g.id });
+    toast('success','ลบหมวดสำเร็จ'); render();
+  }));
+
   const as = $('#addSubject');
   if (as) as.addEventListener('click', () => {
     const groups = getGroups();
+    if (!groups.length) { toast('error','กรุณาเพิ่มหมวดก่อน'); return; }
     openModal({
       title:'เพิ่มรายวิชา', icon:'fa-book-medical',
       body:`<div><label class="label">หมวด/กลุ่มสาระ *</label>
         <select name="groupId" class="select" required>${groups.map(g=>`<option value="${g.id}">${esc(g.name)}</option>`).join('')}</select></div>
       <div><label class="label">ชื่อรายวิชา *</label><input name="name" class="input" required placeholder="เช่น ภาษาไทยพื้นฐาน"></div>`,
       submitText:'เพิ่มรายวิชา',
-      onSubmit: fd => {
+      onSubmit: async fd => {
         const subs = getSubjects();
         const newSub = { id:uid(), groupId:fd.get('groupId'), name:fd.get('name').trim() };
         subs.push(newSub);
@@ -1833,17 +1993,97 @@ function mountView(){
     });
   });
 
+  $$('[data-edit-subject]').forEach(b => b.addEventListener('click', () => {
+    const s = getSubjects().find(x => x.id === b.dataset.editSubject); if (!s) return;
+    openModal({
+      title:'แก้ไขรายวิชา', icon:'fa-book',
+      body:`<div><label class="label">หมวด/กลุ่มสาระ *</label>
+        <select name="groupId" class="select" required>${getGroups().map(g=>`<option value="${g.id}" ${g.id===s.groupId?'selected':''}>${esc(g.name)}</option>`).join('')}</select></div>
+      <div><label class="label">ชื่อรายวิชา *</label><input name="name" class="input" required value="${esc(s.name)}"></div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        const subs = getSubjects();
+        const i = subs.findIndex(x => x.id === s.id);
+        subs[i] = { ...subs[i], groupId:fd.get('groupId'), name:fd.get('name').trim() };
+        DB.set('subjects', subs);
+        if (API.isConnected()) API.request('saveSubject', { data: subs[i] });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-subject]').forEach(b => b.addEventListener('click', async () => {
+    const s = getSubjects().find(x => x.id === b.dataset.delSubject); if (!s) return;
+    if (!await confirmDelete(`ลบรายวิชา "${s.name}" ?`)) return;
+    DB.set('subjects', getSubjects().filter(x => x.id !== s.id));
+    if (API.isConnected()) API.request('deleteSubject', { id: s.id });
+    toast('success','ลบรายวิชาสำเร็จ'); render();
+  }));
+
   const ss = $('#subjSearch');
   if (ss) { ss.addEventListener('input', renderSubjectList); renderSubjectList(); }
 
-  // Classes & Students Management
+  // 4. Classes Management
   $$('[data-clstab]').forEach(b => b.addEventListener('click', () => { state._clsTab = b.dataset.clstab; render(); }));
+
+  const ac = $('#addClass');
+  if (ac) ac.addEventListener('click', () => {
+    openModal({
+      title:'เพิ่มชั้นเรียน', icon:'fa-door-open',
+      body:`<div><label class="label">ระดับชั้น *</label>
+          <select name="level" class="select" required>${BIG_LEVELS.map(l=>`<option value="${l}">${l}</option>`).join('')}</select></div>
+        <div><label class="label">ชื่อชั้นเรียน *</label><input name="name" class="input" required placeholder="เช่น ม.1/1"></div>`,
+      submitText:'เพิ่มชั้นเรียน',
+      onSubmit: async fd => {
+        const classes = getClasses();
+        const name = fd.get('name').trim();
+        if (classes.some(c => c.name === name)) { toast('error','มีชั้นนี้อยู่แล้ว'); return false; }
+        const newClass = { id:uid(), name, level:fd.get('level') };
+        classes.push(newClass);
+        DB.set('classes', classes);
+        if (API.isConnected()) API.request('saveClass', { data: newClass });
+        toast('success','เพิ่มชั้นเรียนสำเร็จ'); render();
+      }
+    });
+  });
+
+  $$('[data-edit-class]').forEach(b => b.addEventListener('click', () => {
+    const c = getClasses().find(x => x.id === b.dataset.editClass); if (!c) return;
+    openModal({
+      title:'แก้ไขชั้นเรียน', icon:'fa-door-open',
+      body:`<div><label class="label">ระดับชั้น *</label>
+        <select name="level" class="select" required>${BIG_LEVELS.map(l=>`<option value="${l}" ${l===c.level?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div><label class="label">ชื่อชั้นเรียน *</label><input name="name" class="input" required value="${esc(c.name)}"></div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        const classes = getClasses();
+        const i = classes.findIndex(x => x.id === c.id);
+        classes[i] = { ...classes[i], name:fd.get('name').trim(), level:fd.get('level') };
+        DB.set('classes', classes);
+        if (API.isConnected()) API.request('saveClass', { data: classes[i] });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-class]').forEach(b => b.addEventListener('click', async () => {
+    const c = getClasses().find(x => x.id === b.dataset.delClass); if (!c) return;
+    const cnt = getStudents().filter(s => s.classId === c.id).length;
+    if (!await confirmDelete(`ลบห้อง "${c.name}" ? นักเรียน ${cnt} คนในห้องนี้จะถูกลบไปด้วย`)) return;
+    DB.set('classes', getClasses().filter(x => x.id !== c.id));
+    DB.set('students', getStudents().filter(s => s.classId !== c.id));
+    if (API.isConnected()) API.request('deleteClass', { id: c.id });
+    toast('success','ลบชั้นเรียนสำเร็จ'); render();
+  }));
+
+  // 5. Students Management
   const sc = $('#stdClassSel');
   if (sc) sc.addEventListener('change', e => { state._stdClass = e.target.value; render(); });
 
   const ast = $('#addStudent');
   if (ast) ast.addEventListener('click', () => {
     const classes = getClasses();
+    if (!classes.length) { toast('error','กรุณาเพิ่มชั้นเรียนก่อน'); return; }
     openModal({
       title:'เพิ่มนักเรียน', icon:'fa-user-plus',
       body:`<div><label class="label">ชั้นเรียน *</label>
@@ -1853,7 +2093,7 @@ function mountView(){
         <div class="sm:col-span-2"><label class="label">ชื่อ - นามสกุล *</label><input name="name" class="input" required placeholder="เช่น เด็กชายสมชาย ใจดี"></div>
       </div>`,
       submitText:'เพิ่มนักเรียน',
-      onSubmit: fd => {
+      onSubmit: async fd => {
         const students = getStudents();
         const newSt = { id:uid(), classId:fd.get('classId'), number:fd.get('number').trim(), name:fd.get('name').trim() };
         students.push(newSt);
@@ -1864,10 +2104,258 @@ function mountView(){
     });
   });
 
-  // Topics
+  const ie = $('#importExcel');
+  if (ie) ie.addEventListener('click', () => {
+    const classes = getClasses();
+    if (!classes.length) { toast('error','กรุณาเพิ่มชั้นเรียนก่อน'); return; }
+    openModal({
+      title:'นำเข้ารายชื่อจาก Excel', icon:'fa-file-excel', size:'max-w-xl',
+      body:`
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-800">
+          <p class="font-semibold">รูปแบบไฟล์ Excel</p>
+          <p class="mt-1">คอลัมน์ A = เลขที่, คอลัมน์ B = ชื่อ-นามสกุล (รองรับไฟล์ .xlsx, .xls, .csv)</p>
+        </div>
+        <div><label class="label">ห้องเรียนปลายทาง *</label>
+          <select name="classId" class="select" required>${classes.map(c=>`<option value="${c.id}" ${c.id===state._stdClass?'selected':''}>${esc(c.name)} (${esc(c.level)})</option>`).join('')}</select></div>
+        <div><label class="label">เลือกไฟล์ Excel *</label>
+          <input type="file" name="file" id="xlsFile" class="input" accept=".xlsx,.xls,.csv" required></div>`,
+      submitText:'เริ่มนำเข้าข้อมูล',
+      onSubmit: (fd, close) => new Promise(resolve => {
+        const file = fd.get('file');
+        if (!file || !file.size) { toast('error','กรุณาเลือกไฟล์'); return resolve(false); }
+        const reader = new FileReader();
+        reader.onload = async ev => {
+          try {
+            const wb = XLSX.read(new Uint8Array(ev.target.result), { type:'array' });
+            const ws = wb.Sheets[wb.SheetNames[0]];
+            const json = XLSX.utils.sheet_to_json(ws, { header:1, blankrows:false });
+            const rows = [];
+            json.forEach((r, i) => {
+              if (!r || r.length < 2) return;
+              let [a, b] = [r[0], r[1]];
+              if (i === 0 && typeof a === 'string' && /เลขที่/i.test(a)) return;
+              if (!b) { b = a; a = rows.length + 1; }
+              if (!b) return;
+              rows.push({ id:uid(), number:String(a).trim(), name:String(b).trim() });
+            });
+            if (!rows.length) { toast('error','ไม่พบข้อมูลที่ถูกต้องในไฟล์'); return resolve(false); }
+
+            const cid = fd.get('classId');
+            const students = getStudents();
+            let addedCount = 0;
+            const newStudentsBatch = [];
+
+            rows.forEach(r => {
+              if (!students.some(s => s.classId === cid && s.name === r.name)) {
+                const item = { id:r.id, classId:cid, number:r.number, name:r.name };
+                students.push(item);
+                newStudentsBatch.push(item);
+                addedCount++;
+              }
+            });
+
+            DB.set('students', students);
+            if (API.isConnected() && newStudentsBatch.length) {
+              API.request('batchImportStudents', { classId: cid, students: newStudentsBatch });
+            }
+
+            toast('success', `นำเข้าข้อมูลสำเร็จ ${addedCount} คน`);
+            render();
+            resolve(true);
+          } catch(err) {
+            console.error(err);
+            toast('error','เกิดข้อผิดพลาดในการอ่านไฟล์ Excel');
+            resolve(false);
+          }
+        };
+        reader.readAsArrayBuffer(file);
+      })
+    });
+  });
+
+  $$('[data-edit-std]').forEach(b => b.addEventListener('click', () => {
+    const s = getStudents().find(x => x.id === b.dataset.editStd); if (!s) return;
+    openModal({
+      title:'แก้ไขข้อมูลนักเรียน', icon:'fa-user-pen',
+      body:`<div><label class="label">ชั้นเรียน *</label>
+        <select name="classId" class="select" required>${getClasses().map(c=>`<option value="${c.id}" ${c.id===s.classId?'selected':''}>${esc(c.name)} (${esc(c.level)})</option>`).join('')}</select></div>
+      <div class="grid gap-4 sm:grid-cols-3">
+        <div><label class="label">เลขที่ *</label><input name="number" class="input" required value="${esc(s.number)}"></div>
+        <div class="sm:col-span-2"><label class="label">ชื่อ - นามสกุล *</label><input name="name" class="input" required value="${esc(s.name)}"></div>
+      </div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        const students = getStudents();
+        const i = students.findIndex(x => x.id === s.id);
+        students[i] = { ...students[i], classId:fd.get('classId'), number:fd.get('number').trim(), name:fd.get('name').trim() };
+        DB.set('students', students);
+        if (API.isConnected()) API.request('saveStudent', { data: students[i] });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-std]').forEach(b => b.addEventListener('click', async () => {
+    const s = getStudents().find(x => x.id === b.dataset.delStd); if (!s) return;
+    if (!await confirmDelete(`ลบนักเรียน "${s.name}" ?`)) return;
+    DB.set('students', getStudents().filter(x => x.id !== s.id));
+    if (API.isConnected()) API.request('deleteStudent', { id: s.id });
+    toast('success','ลบนักเรียนสำเร็จ'); render();
+  }));
+
+  // 6. Topics Management (หัวข้อใหญ่, หัวข้อย่อย, หัวข้อย่อยย่อย)
   $$('[data-topictype]').forEach(b => b.addEventListener('click', () => { state._topicType = b.dataset.topictype; render(); }));
 
-  // Teacher Evaluation Form
+  // 6.1 เพิ่มหัวข้อใหญ่ (Level 1)
+  const addTopic = $('#addTopic');
+  if (addTopic) addTopic.addEventListener('click', () => {
+    const type = state._topicType || 'lower';
+    openModal({
+      title:'เพิ่มหัวข้อใหญ่', icon:'fa-list-check',
+      body:`<div><label class="label">ชื่อหัวข้อใหญ่ *</label>
+        <input name="name" class="input" required placeholder="เช่น 1. ความสามารถในการสื่อสาร"></div>`,
+      submitText:'เพิ่มหัวข้อ',
+      onSubmit: async fd => {
+        const t = getTopics();
+        t[type].push({ id:uid(), name:fd.get('name').trim(), children:[] });
+        DB.set('topics', t);
+        if (API.isConnected()) API.request('saveTopics', { data: t });
+        toast('success','เพิ่มหัวข้อใหญ่สำเร็จ'); render();
+      }
+    });
+  });
+
+  $$('[data-edit-topic]').forEach(b => b.addEventListener('click', () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const node = t[type].find(x => x.id === b.dataset.editTopic); if (!node) return;
+    openModal({
+      title:'แก้ไขหัวข้อใหญ่', icon:'fa-pen',
+      body:`<div><label class="label">ชื่อหัวข้อใหญ่ *</label><input name="name" class="input" required value="${esc(node.name)}"></div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        node.name = fd.get('name').trim();
+        DB.set('topics', t);
+        if (API.isConnected()) API.request('saveTopics', { data: t });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-topic]').forEach(b => b.addEventListener('click', async () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const node = t[type].find(x => x.id === b.dataset.delTopic); if (!node) return;
+    if (!await confirmDelete(`ลบหัวข้อใหญ่ "${node.name}" และหัวข้อย่อยทั้งหมด?`)) return;
+    t[type] = t[type].filter(x => x.id !== node.id);
+    DB.set('topics', t);
+    if (API.isConnected()) API.request('saveTopics', { data: t });
+    toast('success','ลบหัวข้อสำเร็จ'); render();
+  }));
+
+  // 6.2 เพิ่มหัวข้อย่อย (Level 2)
+  $$('[data-add-sub]').forEach(b => b.addEventListener('click', () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const node = t[type].find(x => x.id === b.dataset.addSub); if (!node) return;
+    openModal({
+      title:'เพิ่มหัวข้อย่อย', icon:'fa-plus',
+      body:`<div><label class="label">ชื่อหัวข้อย่อย *</label>
+        <textarea name="name" class="textarea" rows="3" required placeholder="เช่น 1.1 ใช้ภาษาถ่ายทอดความรู้ความคิด..."></textarea></div>`,
+      submitText:'เพิ่มหัวข้อย่อย',
+      onSubmit: async fd => {
+        node.children = node.children || [];
+        node.children.push({ id:uid(), name:fd.get('name').trim(), children:[] });
+        DB.set('topics', t);
+        if (API.isConnected()) API.request('saveTopics', { data: t });
+        toast('success','เพิ่มหัวข้อย่อยสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-edit-sub]').forEach(b => b.addEventListener('click', () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const parent = t[type].find(x => x.id === b.dataset.parent);
+    const node = parent && findNode(parent.children, b.dataset.editSub); if (!node) return;
+    openModal({
+      title:'แก้ไขหัวข้อย่อย', icon:'fa-pen',
+      body:`<div><label class="label">ชื่อหัวข้อย่อย *</label><textarea name="name" class="textarea" rows="3" required>${esc(node.name)}</textarea></div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        node.name = fd.get('name').trim();
+        DB.set('topics', t);
+        if (API.isConnected()) API.request('saveTopics', { data: t });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-sub]').forEach(b => b.addEventListener('click', async () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const parent = t[type].find(x => x.id === b.dataset.parent);
+    const node = parent && findNode(parent.children, b.dataset.delSub); if (!node) return;
+    if (!await confirmDelete(`ลบหัวข้อย่อย "${node.name}" ?`)) return;
+    parent.children = parent.children.filter(x => x.id !== node.id);
+    DB.set('topics', t);
+    if (API.isConnected()) API.request('saveTopics', { data: t });
+    toast('success','ลบสำเร็จ'); render();
+  }));
+
+  // 6.3 เพิ่มหัวข้อย่อยย่อย (Level 3)
+  $$('[data-add-subsub]').forEach(b => b.addEventListener('click', () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const parent = t[type].find(x => x.id === b.dataset.parent);
+    const node = parent && findNode(parent.children, b.dataset.addSubsub); if (!node) return;
+    openModal({
+      title:'เพิ่มหัวข้อย่อยย่อย', icon:'fa-plus',
+      body:`<div><label class="label">ชื่อหัวข้อย่อยย่อย (พฤติกรรมบ่งชี้) *</label>
+        <textarea name="name" class="textarea" rows="3" required placeholder="เช่น พูดถ่ายทอดความรู้ ความเข้าใจจากสารที่อ่านได้"></textarea></div>`,
+      submitText:'เพิ่มหัวข้อย่อยย่อย',
+      onSubmit: async fd => {
+        node.children = node.children || [];
+        node.children.push({ id:uid(), name:fd.get('name').trim(), children:[] });
+        DB.set('topics', t);
+        if (API.isConnected()) API.request('saveTopics', { data: t });
+        toast('success','เพิ่มหัวข้อย่อยย่อยสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-edit-subsub]').forEach(b => b.addEventListener('click', () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const top = t[type].find(x => x.id === b.dataset.grand);
+    const node = top && findNode(top.children, b.dataset.editSubsub); if (!node) return;
+    openModal({
+      title:'แก้ไขหัวข้อย่อยย่อย', icon:'fa-pen',
+      body:`<div><label class="label">ชื่อหัวข้อย่อยย่อย *</label><textarea name="name" class="textarea" rows="3" required>${esc(node.name)}</textarea></div>`,
+      submitText:'บันทึก',
+      onSubmit: async fd => {
+        node.name = fd.get('name').trim();
+        DB.set('topics', t);
+        if (API.isConnected()) API.request('saveTopics', { data: t });
+        toast('success','บันทึกสำเร็จ'); render();
+      }
+    });
+  }));
+
+  $$('[data-del-subsub]').forEach(b => b.addEventListener('click', async () => {
+    const type = state._topicType || 'lower';
+    const t = getTopics();
+    const top = t[type].find(x => x.id === b.dataset.grand);
+    const parent = top && findNode(top.children, b.dataset.parent);
+    const node = parent && findNode(parent.children, b.dataset.delSubsub); if (!node) return;
+    if (!await confirmDelete(`ลบ "${node.name}" ?`)) return;
+    parent.children = parent.children.filter(x => x.id !== node.id);
+    DB.set('topics', t);
+    if (API.isConnected()) API.request('saveTopics', { data: t });
+    toast('success','ลบสำเร็จ'); render();
+  }));
+
+  // 7. Teacher Evaluation Form
   const evS = $('#evSubject');
   if (evS) {
     evS.addEventListener('change', e => { state._evalForm.subjectId = e.target.value; renderEvalList(); });
@@ -1877,7 +2365,7 @@ function mountView(){
   }
   $$('[data-eval]').forEach(b => b.addEventListener('click', () => openEvalModal(b.dataset.eval)));
 
-  // Settings & Cloud Sync Handlers
+  // 8. Settings & Cloud Sync Handlers
   const btnSaveGas = $('#btnSaveGasUrl');
   if (btnSaveGas) {
     btnSaveGas.addEventListener('click', async () => {
@@ -1950,7 +2438,7 @@ function mountView(){
     });
   }
 
-  // Logo Upload to Google Drive
+  // 9. Logo Upload to Google Drive (Folder ID: 1ehgB_CLugTr96TwYLTbSISYyO4K5rGob)
   const pickLogo = $('#pickLogo');
   if (pickLogo) {
     pickLogo.addEventListener('click', () => $('#logoFile').click());
@@ -1969,7 +2457,7 @@ function mountView(){
         }
 
         const s = getSettings();
-        s.logo = driveUrl || base64; // ใช้ Drive URL หรือ Base64 หากออฟไลน์
+        s.logo = driveUrl || base64;
         DB.set('settings', s);
 
         if (API.isConnected()) {
@@ -2009,7 +2497,7 @@ function mountView(){
     });
   }
 
-  // Profile password
+  // 10. Profile Password Change
   const pw = $('#pwForm');
   if (pw) {
     pw.addEventListener('submit', e => {
