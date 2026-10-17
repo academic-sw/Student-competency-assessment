@@ -734,7 +734,10 @@ function headerHTML(){
   const s = getSettings();
   const u = state.user;
   const logo = s.logo
-    ? `<img src="${s.logo}" alt="logo" class="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-200 sm:h-11 sm:w-11">`
+    ? `<img src="${s.logo}" alt="logo" class="h-10 w-10 rounded-xl object-cover ring-1 ring-slate-200 sm:h-11 sm:w-11" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';">
+       <div class="h-10 w-10 place-items-center rounded-xl text-white sm:h-11 sm:w-11 hidden" style="background:var(--c-primary)">
+         <i class="fa-solid fa-graduation-cap text-lg"></i>
+       </div>`
     : `<div class="grid h-10 w-10 place-items-center rounded-xl text-white sm:h-11 sm:w-11" style="background:var(--c-primary)">
          <i class="fa-solid fa-graduation-cap text-lg"></i></div>`;
   const items = navItems();
@@ -1395,13 +1398,11 @@ function viewTopics(){
 }
 
 /* ---------- 8.8 ADMIN : REPORTS (คิดเฉพาะรายการที่ประเมินจริง) ---------- */
+/* ---------- 8.8 ADMIN : REPORTS (คิดเฉพาะรายการที่ประเมินจริง) ---------- */
 function viewReports(){
   const terms = getTerms();
-  const cur = currentTerm();
   const evs = getEvals();
-  const classes = getClasses();
-  const subjects = getSubjects();
-
+  
   // สร้างรายการสรุปตาม (ห้องเรียน x รายวิชา) ที่ได้รับการประเมินจริง
   const roomSubjectPairs = [];
   const map = new Map();
@@ -1409,7 +1410,7 @@ function viewReports(){
   evs.forEach(e => {
     const key = `${e.classId}_${e.subjectId}_${e.termId}`;
     if (!map.has(key)) {
-      map.set(key, []);
+      map.set(key, { list: [], latest: 0 });
       roomSubjectPairs.push({
         classId: e.classId,
         subjectId: e.subjectId,
@@ -1417,8 +1418,20 @@ function viewReports(){
         key
       });
     }
-    map.get(key).push(e);
+    const group = map.get(key);
+    group.list.push(e);
+    // หาเวลาล่าสุดของกลุ่มนี้เพื่อนำมาเรียงลำดับ
+    const time = new Date(e.updatedAt || 0).getTime();
+    if (time > group.latest) group.latest = time;
   });
+
+  // เรียงลำดับจากใหม่ไปเก่า (ล่าสุดอยู่อันแรก)
+  roomSubjectPairs.sort((a, b) => map.get(b.key).latest - map.get(a.key).latest);
+
+  // ระบบแบ่งหน้า (10 รายการต่อหน้า)
+  const per = 10;
+  const page = getPage('reports');
+  const slice = roomSubjectPairs.slice((page - 1) * per, page * per);
 
   return `
   <div class="fade-in space-y-4">
@@ -1434,11 +1447,11 @@ function viewReports(){
             <th>ประเมินแล้ว</th><th>คะแนนเฉลี่ย</th><th>ระดับคุณภาพ</th>
           </tr></thead>
           <tbody>
-            ${roomSubjectPairs.length ? roomSubjectPairs.map(p => {
+            ${slice.length ? slice.map(p => {
               const cls = classById(p.classId);
               const subj = subjectById(p.subjectId);
               const term = terms.find(t => String(t.id) === String(p.termId));
-              const list = map.get(p.key) || [];
+              const list = map.get(p.key).list;
               const validAvgs = list.map(e => Number(e.avg || 0));
               const avg = validAvgs.length ? (validAvgs.reduce((a,b)=>a+b,0) / validAvgs.length) : 0;
               const q = levelFromAvg(avg);
@@ -1456,6 +1469,7 @@ function viewReports(){
           </tbody>
         </table>
       </div>
+      ${pager(roomSubjectPairs.length, page, per, 'reports')} <!-- แสดงแถบแบ่งหน้า -->
     </div>
   </div>`;
 }
@@ -1513,9 +1527,11 @@ function viewSettings(){
       <div class="card p-5">
         <h3 class="text-sm font-bold text-slate-700"><i class="fa-solid fa-image mr-1" style="color:var(--c-primary)"></i> โลโก้สถานศึกษา</h3>
         <div class="mt-4 flex flex-col items-center gap-4 sm:flex-row">
-          <div class="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50">
-            ${s.logo ? `<img src="${s.logo}" class="h-full w-full object-cover">`
-                     : `<i class="fa-solid fa-image text-3xl text-slate-300"></i>`}
+                    <div class="grid h-24 w-24 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50">
+            ${s.logo 
+              ? `<img src="${s.logo}" class="h-full w-full object-cover" onerror="this.src='data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjZjFmNWY5Ii8+PHRleHQgeD0iNTAlIiB5PSI1MCUiIGZvbnQtc2l6ZT0iMTIiIHRleHQtYW5jaG9yPSJtaWRkbGUiIGFsaWdubWVudC1iYXNlbGluZT0ibWlkZGxlIiBmaWxsPSIjOTQlYTNiIj5JbWFnZSBFcnJvcjwvdGV4dD48L3N2Zz4=';">`
+              : `<i class="fa-solid fa-image text-3xl text-slate-300"></i>`
+            }
           </div>
           <div class="flex-1 space-y-2">
             <input type="file" id="logoFile" accept="image/*" class="hidden">
