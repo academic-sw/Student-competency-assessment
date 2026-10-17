@@ -106,7 +106,7 @@ tailwind.config = {
       <i class="fa-solid fa-graduation-cap mr-1" style="color:var(--c-primary)"></i>
       กลุ่มบริหารงานวิชาการโรงเรียนเสาไห้ "วิมลวิทยานุกูล"
     </p>
-    <p class="mt-1 text-xs text-slate-400">ระบบประเมินสมรรถนะสำคัญของผู้เรียน</p>
+    <p class="mt-1 text-xs text-slate-400">ระบบประเมินสมรรถนะสำคัญของผู้เรียน · ฐานข้อมูล Google Sheets & Google Drive · © <span id="yy"></span></p>
   </div>
 </footer>
 
@@ -849,7 +849,7 @@ function viewHome(){
             โรงเรียนเสาไห้ "วิมลวิทยานุกูล"
           </p>
           <p class="mx-auto mt-3 max-w-xl text-sm text-slate-500">
-            
+            ประเมินสมรรถนะรายวิชา/ระดับชั้น/ห้องเรียน
           </p>
           <div class="mt-8 flex flex-wrap items-center justify-center gap-3">
             <button data-nav="dashboard" class="btn btn-ghost px-6 py-3 text-sm">
@@ -2975,11 +2975,11 @@ async function openLogin(){
       <div class="space-y-3 text-left">
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อผู้ใช้</label>
-          <input id="sw-u" class="swal2-input !m-0 !w-full !text-sm" placeholder="เช่น admin หรือ teacher" value="">
+          <input id="sw-u" class="swal2-input !m-0 !w-full !text-sm" placeholder="เช่น admin หรือ teacher" value="admin">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1">รหัสผ่าน</label>
-          <input id="sw-p" type="password" class="swal2-input !m-0 !w-full !text-sm" placeholder="รหัสผ่าน" value="">
+          <input id="sw-p" type="password" class="swal2-input !m-0 !w-full !text-sm" placeholder="รหัสผ่าน" value="admin1234">
         </div>
       </div>`,
     showCancelButton:true, confirmButtonText:'เข้าสู่ระบบ',
