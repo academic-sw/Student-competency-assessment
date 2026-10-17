@@ -1671,8 +1671,9 @@ function renderEvalList(){
   });
 
   // คำนวณค่าเฉลี่ยเฉพาะนักเรียนที่ได้รับการประเมินในวิชานี้จริงเท่านั้น!
-  const doneList = results.filter(x => x.r && x.r.evaluatedLeaves > 0);
-  const classAvg = doneList.length ? (doneList.reduce((a,b)=>a+b.r.avg,0) / doneList.length) : null;
+    const doneList = results.filter(x => x.r && x.r.evaluatedLeaves > 0);
+  const completeList = results.filter(x => x.r && x.r.totalLeaves > 0 && x.r.evaluatedLeaves === x.r.totalLeaves);
+  const classAvg = doneList.length ? doneList.reduce((a,b)=>a+b.r.avg,0)/doneList.length : 0;
   const classLv = classAvg !== null ? levelFromAvg(classAvg) : 0;
 
   box.innerHTML = `
@@ -1682,8 +1683,8 @@ function renderEvalList(){
         <span class="badge" style="background:var(--c-primary-soft);color:var(--c-primary-dark)">ห้อง ${esc(cls?.name||'')}</span>
         <span class="badge bg-slate-200 text-slate-700">วิชา: ${esc(subj?.name||'')}</span>
         <span class="badge bg-slate-100 text-slate-600">นักเรียนทั้งหมด ${students.length} คน</span>
-        <span class="badge ${doneList.length===students.length && students.length>0 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}">
-          ประเมินแล้ว ${doneList.length}/${students.length} คน
+                <span class="badge ${completeList.length===students.length && students.length>0?'bg-green-100 text-green-700':'bg-amber-100 text-amber-700'}">
+          ประเมินครบ ${completeList.length}/${students.length}
         </span>
       </div>
       <div class="flex items-center gap-3">
@@ -1696,19 +1697,31 @@ function renderEvalList(){
       <table class="tbl">
         <thead><tr><th>เลขที่</th><th>ชื่อ - นามสกุล</th><th>สถานะในวิชานี้</th><th>คะแนนเฉลี่ย</th><th>ระดับคุณภาพ</th><th class="text-right">จัดการ</th></tr></thead>
         <tbody>
-          ${results.length === 0 ? `<tr><td colspan="6" class="p-8 text-center text-slate-400">ยังไม่มีรายชื่อนักเรียนในห้องนี้ (ไปที่เมนู <b>ชั้นเรียน & นักเรียน</b> เพื่อเพิ่มรายชื่อ)</td></tr>` : results.map(x => {
-            const isDone = x.r && x.r.evaluatedLeaves > 0;
+                    ${results.length === 0 ? `<tr><td colspan="6" class="p-8 text-center text-slate-400">ยังไม่มีรายชื่อนักเรียนในห้องนี้</td></tr>` : results.map(x => {
+            const isComplete = x.r && x.r.totalLeaves > 0 && x.r.evaluatedLeaves === x.r.totalLeaves;
+            const hasPartial = x.r && x.r.evaluatedLeaves > 0 && !isComplete;
+            const hasAny = isComplete || hasPartial;
+
+            let statusBadge;
+            if (isComplete) {
+              statusBadge = '<span class="badge bg-green-100 text-green-700"><i class="fa-solid fa-circle-check"></i> ประเมินครบแล้ว</span>';
+            } else if (hasPartial) {
+              statusBadge = `<span class="badge bg-amber-100 text-amber-700"><i class="fa-solid fa-triangle-exclamation"></i> ยังไม่ครบ ${x.r.evaluatedLeaves}/${x.r.totalLeaves}</span>`;
+            } else {
+              statusBadge = '<span class="badge bg-slate-100 text-slate-500"><i class="fa-solid fa-clock"></i> รอประเมิน</span>';
+            }
+
             return `
             <tr>
               <td class="font-semibold text-slate-600">${esc(x.s.number)}</td>
               <td class="font-medium text-slate-700">${esc(x.s.name)}</td>
-              <td>${isDone ? '<span class="badge bg-green-100 text-green-700"><i class="fa-solid fa-check"></i>ประเมินแล้ว</span>'
-                           : '<span class="badge bg-slate-100 text-slate-400"><i class="fa-solid fa-clock"></i>รอประเมิน</span>'}</td>
-              <td class="font-semibold font-mono" style="color:${isDone?LEVEL_INFO[x.r.level].hex:'#cbd5e1'}">${isDone?fmt(x.r.avg):'-'}</td>
-              <td>${isDone?levelBadge(x.r.level):'<span class="text-xs text-slate-300">—</span>'}</td>
+              <td>${statusBadge}</td>
+              <td class="font-semibold" style="color:${hasAny?LEVEL_INFO[x.r.level].hex:'#cbd5e1'}">${hasAny?fmt(x.r.avg):'-'}</td>
+              <td>${hasAny?levelBadge(x.r.level):'<span class="text-xs text-slate-300">—</span>'}</td>
               <td class="text-right">
-                <button type="button" data-eval="${x.s.id}" class="btn ${isDone?'btn-ghost':'btn-primary'} h-8 px-3 text-xs">
-                  <i class="fa-solid ${isDone?'fa-pen':'fa-clipboard-check'}"></i> ${isDone?'แก้ไขคะแนน':'ประเมิน'}
+                <button type="button" data-eval="${x.s.id}" class="btn ${isComplete?'btn-ghost':'btn-primary'} h-8 px-3 text-xs">
+                  <i class="fa-solid ${isComplete?'fa-pen':'fa-clipboard-check'}"></i>
+                  ${isComplete?'แก้ไข':(hasPartial?'ประเมินต่อ':'ประเมิน')}
                 </button>
               </td>
             </tr>`;
@@ -1809,14 +1822,26 @@ function openEvalModal(studentId){
         </button>
       </div>
 
+            <!-- ⚠️ Required Note -->
+      <div class="flex shrink-0 items-center gap-1.5 border-b border-amber-100 bg-amber-50 px-4 sm:px-6 py-1.5 text-[11px] text-amber-800">
+        <i class="fa-solid fa-circle-exclamation text-amber-500"></i>
+        <span><b class="text-red-600">*</b> จำเป็นต้องประเมินให้ครบทุกข้อก่อนบันทึก</span>
+      </div>
+
+      <!-- Live Summary Bar (Fixed) -->
       <div class="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/80 px-4 sm:px-6 py-2.5">
         <div class="flex items-center gap-3">
           <span class="text-xs font-semibold text-slate-500">คะแนนเฉลี่ยรวม:</span>
           <span id="liveAvg" class="text-2xl font-bold text-slate-400 font-mono">0.00</span>
           <span id="liveBadge"></span>
         </div>
-        <div class="flex items-center gap-1.5 text-xs">
-          ${[3,2,1,0].map(q => `<span class="badge ${LEVEL_INFO[q].cls}">${q}=${LEVEL_INFO[q].short}</span>`).join('')}
+        <div class="flex items-center gap-2">
+          <span id="liveProgress" class="badge bg-amber-100 text-amber-700 text-xs font-bold">
+            <i class="fa-solid fa-triangle-exclamation"></i> 0/0 ข้อ
+          </span>
+          <div class="hidden sm:flex items-center gap-1.5 text-xs">
+            ${[3,2,1,0].map(q => `<span class="badge ${LEVEL_INFO[q].cls}">${q}=${LEVEL_INFO[q].short}</span>`).join('')}
+          </div>
         </div>
       </div>
 
@@ -1844,10 +1869,14 @@ function openEvalModal(studentId){
 
   $$('[data-eval-close]', root).forEach(b => b.addEventListener('click', close));
 
+    // ฟังก์ชันอัปเดตคะแนนสดทุกระดับแบบ Hierarchical Rollup
   const updateSummary = () => {
     const res = computeFromTopics(currentScores, topics);
     const avgEl = $('#liveAvg', root);
     const badgeEl = $('#liveBadge', root);
+    const progEl = $('#liveProgress', root);
+    const saveBtn = $('#btnSaveEval', root);
+
     if (avgEl) {
       avgEl.textContent = fmt(res.avg);
       avgEl.style.color = LEVEL_INFO[res.level].hex;
@@ -1856,6 +1885,34 @@ function openEvalModal(studentId){
       badgeEl.innerHTML = `<span class="badge ${LEVEL_INFO[res.level].cls}">${LEVEL_INFO[res.level].label}</span>`;
     }
 
+    const isComplete = res.totalLeaves > 0 && res.evaluatedLeaves === res.totalLeaves;
+
+    // ✅ อัปเดต Progress Badge
+    if (progEl) {
+      if (res.totalLeaves === 0) {
+        progEl.className = 'badge bg-slate-100 text-slate-500 text-xs font-bold';
+        progEl.innerHTML = `<i class="fa-solid fa-circle-info"></i> ไม่มีหัวข้อประเมิน`;
+      } else if (isComplete) {
+        progEl.className = 'badge bg-green-100 text-green-700 text-xs font-bold';
+        progEl.innerHTML = `<i class="fa-solid fa-circle-check"></i> ครบ ${res.evaluatedLeaves}/${res.totalLeaves} ข้อ`;
+      } else {
+        progEl.className = 'badge bg-amber-100 text-amber-700 text-xs font-bold';
+        progEl.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i> ${res.evaluatedLeaves}/${res.totalLeaves} ข้อ (ยังไม่ครบ)`;
+      }
+    }
+
+    // ✅ ปุ่มบันทึกแสดงสถานะ
+    if (saveBtn) {
+      if (res.totalLeaves > 0 && !isComplete) {
+        saveBtn.classList.add('opacity-70');
+        saveBtn.title = 'กรุณาประเมินให้ครบทุกข้อก่อนบันทึก';
+      } else {
+        saveBtn.classList.remove('opacity-70');
+        saveBtn.title = '';
+      }
+    }
+
+    // อัปเดตคะแนนเฉลี่ยสด (Live Avg) และความคืบหน้าของทุกระดับชั้นใน DOM
     $$('[data-eval-node]', root).forEach(box => {
       const nid = box.dataset.evalNode;
       const nRes = res.nodeMap[nid];
@@ -1914,14 +1971,69 @@ function openEvalModal(studentId){
 
   updateSummary();
 
+    // บันทึกผลการประเมิน
   $('#btnSaveEval', root).addEventListener('click', async () => {
     const saveBtn = $('#btnSaveEval', root);
+    const res = computeFromTopics(currentScores, topics);
+
+    // ✅ ตรวจสอบว่ามีหัวข้อประเมินหรือไม่
+    if (res.totalLeaves === 0) {
+      Swal.fire({
+        icon: 'error',
+        title: 'ไม่พบหัวข้อประเมิน',
+        text: 'กรุณาให้ผู้ดูแลระบบตั้งค่าหัวข้อประเมินก่อน',
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+
+    // ✅ ตรวจสอบว่าประเมินครบทุกข้อหรือไม่
+    if (res.evaluatedLeaves < res.totalLeaves) {
+      const missing = [];
+      const collect = (node, prefix) => {
+        const kids = node.children || [];
+        if (!kids.length) {
+          const v = currentScores[node.id];
+          if (v === undefined || v === null || v === '' || isNaN(Number(v))) {
+            missing.push(prefix + ' ' + node.name);
+          }
+          return;
+        }
+        kids.forEach((c, i) => collect(c, prefix + (prefix ? '.' : '') + (i + 1)));
+      };
+      topics.forEach((t, i) => collect(t, String(i + 1)));
+
+      const listHTML = missing.slice(0, 15).map((name, i) =>
+        `<li class="text-left text-xs py-1 border-b border-slate-100 last:border-0">
+          <b class="text-rose-600">${i + 1}.</b> ${esc(name)}
+        </li>`
+      ).join('');
+
+      Swal.fire({
+        icon: 'warning',
+        title: 'ประเมินไม่ครบทุกข้อ',
+        html: `
+          <p class="text-sm text-slate-600 mb-2">
+            จำเป็นต้องประเมินให้ครบทุกข้อก่อนบันทึก
+            (ยังขาดอีก <b class="text-red-600">${missing.length}</b> ข้อ)
+          </p>
+          <div class="max-h-56 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 px-3 py-1">
+            <ul class="list-none">${listHTML}
+              ${missing.length > 15 ? `<li class="text-center text-xs text-slate-400 py-1">... และอีก ${missing.length - 15} ข้อ</li>` : ''}
+            </ul>
+          </div>
+        `,
+        confirmButtonText: '<i class="fa-solid fa-check"></i> รับทราบ',
+        confirmButtonColor: '#ef4444'
+      });
+      return;
+    }
+
     const origHTML = saveBtn.innerHTML;
     saveBtn.innerHTML = '<i class="fa-solid fa-spinner spin"></i> กำลังบันทึก...';
     saveBtn.disabled = true;
 
     try {
-      const res = computeFromTopics(currentScores, topics);
       const evs = getEvals();
       const idx = evs.findIndex(e =>
         String(e.termId) === String(cur.id) &&
@@ -1957,8 +2069,8 @@ function openEvalModal(studentId){
             DB.set('evaluations', cloudRes.data);
           }
         } catch (apiErr) {
-          console.warn('บันทึกขึ้น Google Sheets ล้มเหลวในขณะนี้:', apiErr);
-          toast('warning', 'บันทึกลงในเครื่องแล้ว (รอส่งขึ้น Google Sheets)');
+          console.warn('บันทึกขึ้น Google Sheets ไม่สำเร็จในขณะนี้:', apiErr);
+          toast('warning', 'บันทึกลงระบบในเครื่องแล้ว (รอส่งขึ้น Google Sheets)');
         }
       }
 
@@ -1969,7 +2081,12 @@ function openEvalModal(studentId){
       console.error('Error saving eval:', err);
       saveBtn.disabled = false;
       saveBtn.innerHTML = origHTML;
-      Swal.fire({ icon:'error', title:'เกิดข้อผิดพลาดในการบันทึก', text:err.message||String(err) });
+      Swal.fire({
+        icon: 'error',
+        title: 'เกิดข้อผิดพลาดในการบันทึก',
+        text: err.message || String(err),
+        confirmButtonColor: '#ef4444'
+      });
     }
   });
 }
