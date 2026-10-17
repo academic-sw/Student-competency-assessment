@@ -2969,34 +2969,58 @@ function mountView(){
    11. AUTHENTICATION
 ============================================================ */
 async function openLogin(){
+  // ✅ ดึงข้อมูลที่เคยบันทึกไว้
+  const saved = DB.get('saved_login', null);
+  const savedUser = saved?.username || '';
+  const savedPass = saved?.password || '';
+  const remember  = !!saved;
+
   const r = await Swal.fire({
     title:'เข้าสู่ระบบ',
     html:`
       <div class="space-y-3 text-left">
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1">ชื่อผู้ใช้</label>
-          <input id="sw-u" class="swal2-input !m-0 !w-full !text-sm" placeholder="เช่น admin หรือ teacher" >
+          <input id="sw-u" class="swal2-input !m-0 !w-full !text-sm"
+                 placeholder="กรอก username" autocomplete="off"
+                 value="${esc(savedUser)}">
         </div>
         <div>
           <label class="block text-xs font-semibold text-slate-500 mb-1">รหัสผ่าน</label>
-          <input id="sw-p" type="password" class="swal2-input !m-0 !w-full !text-sm" placeholder="รหัสผ่าน" >
+          <input id="sw-p" type="password" class="swal2-input !m-0 !w-full !text-sm"
+                 placeholder="กรอก password" autocomplete="new-password"
+                 value="${esc(savedPass)}">
         </div>
+        <label class="flex items-center gap-2 pt-1 text-sm text-slate-600 cursor-pointer select-none">
+          <input id="sw-remember" type="checkbox" ${remember?'checked':''}
+                 class="h-4 w-4 rounded accent-green-600">
+          จดจำ username / password ไว้ในเครื่องนี้
+        </label>
       </div>`,
     showCancelButton:true, confirmButtonText:'เข้าสู่ระบบ',
     cancelButtonText:'ยกเลิก', confirmButtonColor:getSettings().primary || '#16a34a',
     preConfirm: () => {
-      const u = $('#sw-u').value.trim();
-      const p = $('#sw-p').value;
+      const u   = $('#sw-u').value.trim();
+      const p   = $('#sw-p').value;
+      const rem = $('#sw-remember').checked;
       if (!u || !p) { Swal.showValidationMessage('กรุณากรอกชื่อผู้ใช้และรหัสผ่าน'); return false; }
-      return { u, p };
+      return { u, p, rem };
     }
   });
   if (!r.isConfirmed) return;
 
   const user = getUsers().find(x => x.username === r.value.u && x.password === r.value.p);
   if (!user) {
-    Swal.fire({ icon:'error', title:'เข้าสู่ระบบไม่สำเร็จ', text:'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง', confirmButtonColor:getSettings().primary || '#16a34a' });
+    Swal.fire({ icon:'error', title:'เข้าสู่ระบบไม่สำเร็จ', text:'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง',
+                confirmButtonColor:getSettings().primary || '#16a34a' });
     return;
+  }
+
+  // ✅ บันทึก หรือ ล้างข้อมูลจดจำ
+  if (r.value.rem) {
+    DB.set('saved_login', { username: r.value.u, password: r.value.p });
+  } else {
+    DB.del('saved_login');
   }
 
   state.user = user;
